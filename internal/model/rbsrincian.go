@@ -9,6 +9,8 @@ type RBSrincian struct {
 
 	TanggalTransaksi time.Time `json:"tanggal_transaksi"`
 	Kuantitas        int       `gorm:"default:1" json:"kuantitas"`
+	Uraian           string    `gorm:"type:varchar(255)" json:"uraian"`
+	Kategori         string    `gorm:"type:varchar(50)" json:"kategori"`
 	HargaUnit        int64     `json:"harga_unit"`
 	TotalHarga       int64     `json:"total_harga"`
 	UrlStruk         string    `gorm:"type:varchar(255)" json:"url_struk"`

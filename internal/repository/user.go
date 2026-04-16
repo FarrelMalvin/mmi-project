@@ -16,6 +16,8 @@ type userRepository struct {
 type UserRepository interface {
 	GetByName(ctx context.Context, nama string) (*model.User, error)
 	GetByID(ctx context.Context, userID uint) (*model.User, error)
+	UpdateSignaturePath(ctx context.Context, userID uint, path string) error
+	ChangePassword(ctx context.Context, userID uint, newPassword string) error
 }
 
 func NewUserRepository(db *gorm.DB) UserRepository {
@@ -43,3 +45,18 @@ func (r *userRepository) GetByID(ctx context.Context, userID uint) (*model.User,
 	}
 	return &user, nil
 }
+
+func (r *userRepository) UpdateSignaturePath(ctx context.Context, userID uint, path string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("path_tanda_tangan", path).Error
+}
+
+func (r *userRepository) ChangePassword(ctx context.Context, userID uint, newPassword string) error {
+	return r.db.WithContext(ctx).
+		Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("password", newPassword).Error
+}
+

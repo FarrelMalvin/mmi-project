@@ -4,10 +4,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
-	"strconv"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -16,7 +16,7 @@ import (
 
 type CustomClaims struct {
 	jwt.RegisteredClaims
-	UserID       uint `json:"user_id"`
+	UserID       uint   `json:"user_id"`
 	Jabatan      string `json:"jabatan"`
 	TokenVersion int    `json:"token_version"`
 	TokenType    string `json:"token_type"`
@@ -90,10 +90,11 @@ func NewConfig() (*Config, error) {
 	return &Config{
 		AccessTokenSecret:  []byte(accessSecret),
 		RefreshTokenSecret: []byte(refreshSecret),
-		AccessTokenTTL:     15 * time.Minute,
-		RefreshTokenTTL:    7 * 24 * time.Hour,
-		Issuer:             "your-app-name",
-		Audience:           []string{"main-api"},
+		//ubah lagi ke 15 mnt
+		AccessTokenTTL:  45 * time.Minute,
+		RefreshTokenTTL: 7 * 24 * time.Hour,
+		Issuer:          "your-app-name",
+		Audience:        []string{"main-api"},
 	}, nil
 }
 

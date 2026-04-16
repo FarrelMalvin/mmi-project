@@ -4,9 +4,10 @@ import "time"
 
 type PPDHotel struct {
 	Id           uint `gorm:"primaryKey" json:"id"`
-	RequestPPDID uint `gorm:"uniqueindex" json:"request_ppd_id"`
+	RequestPPDID uint `gorm:"foreignKey" json:"request_ppd_id"`
 
 	NamaHotel string    `gorm:"type:varchar(100)" json:"nama_hotel"`
+	PeriodeHotel time.Time `json:"periode_hotel"`
 	CheckIn   time.Time `json:"check_in"`
 	CheckOut  time.Time `json:"check_out"`
 	Kategori  string    `gorm:"type:varchar(20)" json:"kategori"`

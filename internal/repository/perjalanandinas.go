@@ -2,7 +2,8 @@ package repository
 
 import (
 	"context"
-	"fmt"
+	"errors"
+
 	"golang-mmi/internal/model"
 
 	"gorm.io/gorm"
@@ -10,17 +11,20 @@ import (
 
 type PerjalananDinasRepository interface {
 	CreatePengajuanPerjalanaDinas(ctx context.Context, perjalananDinas *model.RequestPPD) error
-	GetListRiwayatPerjalananDinas(ctx context.Context, page, limit int) ([]RiwayatPPDResponse, int64, error)
-	GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page, limit int) ([]RiwayatPPDResponse, int64, error)
+	GetListRiwayatPerjalananDinas(ctx context.Context, page, limit int) ([]model.PPDListView, int64, error)
+	GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page, limit int) ([]model.PPDListView, int64, error)
 	GetDetailPerjalananDinas(ctx context.Context, ppdid uint) (model.RequestPPD, error)
 	ApprovePerjalananDinas(ctx context.Context, p ApprovePerjalananDinasparams) error
 	DeclinePerjalananDinas(ctx context.Context, p DeclinePerjalananDinasParams) error
-	GetLastNomorDokumenGeneral(ctx context.Context, pattern string) (string, error)
-	GetLastNomorDokumenSpecific(ctx context.Context, tipe string, pattern string) (string, error)
-	GetListPPDForRealisasi(ctx context.Context, userID uint) ([]DropdownPPDResponse, error)
-	GetListRiwayatPerjalananDinasByAtasan(ctx context.Context, userID uint, page int, limit int) ([]RiwayatPPDResponse, int64, error)
-	GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint) ([]model.RequestPPD, error)
+	GetListPPDForRealisasi(ctx context.Context, userID uint) ([]model.DropdownPPDView, error)
+	GetListRiwayatPerjalananDinasByAtasan(ctx context.Context, userID uint, page int, limit int) ([]model.PPDListView, int64, error)
+	GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint, page int, limit int) ([]model.PPDListView, int64, error)
 	GetStatusPerjalananDinas(ctx context.Context, ppdid uint) (string, error)
+	GetItemsByPPDID(ctx context.Context, ppdID uint, userid uint) ([]model.PPDItemView, error)
+	GetTotalEstimasi(ctx context.Context, ppdid uint) (int64, error)
+	GetUserIDByPPDID(ctx context.Context, ppdID uint) (uint, error)
+	GetNomorBS(ctx context.Context, ppdID uint) (string, error) 
+	
 }
 
 type ApprovePerjalananDinasparams struct {
@@ -28,24 +32,6 @@ type ApprovePerjalananDinasparams struct {
 	NextStatus   string
 	NewDokumen   []model.Dokumen
 	Riwayat      *model.RiwayatApproval
-}
-
-type RiwayatPPDResponse struct {
-	ID               uint   `json:"id"`
-	Nama             string `json:"nama,omitempty"`
-	NomorDokumen     string `json:"nomor_dokumen"`
-	Tujuan           string `json:"tujuan"`
-	Keperluan        string `json:"keperluan"`
-	TotalEstimasi    int    `json:"total_estimasi"`
-	Status           string `json:"status"`
-	PeriodeBerangkat string `json:"periode_berangkat"`
-}
-
-type DropdownPPDResponse struct {
-	ID            uint   `json:"id"`
-	NomorDokumen  string `json:"nomor_dokumen"`
-	Tujuan        string `json:"tujuan"`
-	TotalEstimasi int64  `json:"total_estimasi"`
 }
 
 type DeclinePerjalananDinasParams struct {
@@ -68,8 +54,8 @@ func (r *PerjalananDinas) CreatePengajuanPerjalanaDinas(ctx context.Context, per
 	return r.db.WithContext(ctx).Create(perjalananDinas).Error
 }
 
-func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, page int, limit int) ([]RiwayatPPDResponse, int64, error) {
-	var listData []RiwayatPPDResponse
+func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, page int, limit int) ([]model.PPDListView, int64, error) {
+	var listData []model.PPDListView
 	var totalData int64
 
 	if page < 1 {
@@ -80,19 +66,19 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, pag
 	}
 	offset := (page - 1) * limit
 	query := r.db.WithContext(ctx).
-		Table("request_ppd").
+		Table("request_ppds").
 		Select(`
-			request_ppd.id, 
+			request_ppds.id, 
 			users.nama,
-			dokumens.nomor_dokumen, 
-			request_ppd.tujuan, 
-			request_ppd.keperluan, 
-			request_ppd.total_estimasi, 
-			request_ppd.status, 
-			request_ppd.periode_berangkat
+			dokumens.nomor_tipe_dokumen, 
+			request_ppds.tujuan, 
+			request_ppds.keperluan, 
+			request_ppds.total_estimasi, 
+			request_ppds.status, 
+			request_ppds.periode_berangkat
 		`).
-		Joins("LEFT JOIN dokumens ON dokumens.doc_ref_id = request_ppd.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'bonsementara'").
-		Joins("LEFT JOIN users ON users.id = request_ppd.user_id")
+		Joins("LEFT JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'Bon Sementara'").
+		Joins("LEFT JOIN users ON users.id = request_ppds.user_id")
 
 	err := query.Count(&totalData).Error
 	if err != nil {
@@ -100,7 +86,7 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, pag
 	}
 
 	err = query.
-		Order("request_ppd.periode_berangkat DESC").
+		Order("request_ppds.periode_berangkat DESC").
 		Offset(offset).
 		Limit(limit).
 		Find(&listData).Error
@@ -110,11 +96,15 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, pag
 
 func (r *PerjalananDinas) GetStatusPerjalananDinas(ctx context.Context, ppdid uint) (string, error) {
 	var status string
-	err := r.db.WithContext(ctx).
+	err := r.db.Debug().WithContext(ctx).
 		Model(&model.RequestPPD{}).
 		Select("status").
 		Where("id = ?", ppdid).
 		Scan(&status).Error
+
+	if status == "" {
+		return "", errors.New("data tidak ditemukan atau status memang kosong")
+	}
 
 	return status, err
 }
@@ -124,10 +114,11 @@ func (r *PerjalananDinas) GetDetailPerjalananDinas(ctx context.Context, ppdid ui
 
 	err := r.db.WithContext(ctx).
 		Preload("RincianTambahan").
+		Preload("User").
 		Preload("RincianHotel").
 		Preload("RincianTransportasi").
 		Preload("RealisasiBonSementara").
-		Preload("RiwayatPersetujuan").
+		Preload("RiwayatPersetujuan.User").
 		Preload("Dokumen").
 		First(&detailData, ppdid).Error
 
@@ -157,8 +148,8 @@ func (r *PerjalananDinas) ApprovePerjalananDinas(ctx context.Context, p ApproveP
 	})
 }
 
-func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page int, limit int) ([]RiwayatPPDResponse, int64, error) {
-	var listData []RiwayatPPDResponse
+func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page int, limit int) ([]model.PPDListView, int64, error) {
+	var listData []model.PPDListView
 	var totalData int64
 
 	if page < 1 {
@@ -172,14 +163,14 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByUserID(ctx context.Cont
 		Table("request_ppds").
 		Select(`
 			request_ppds.id, 
-			dokumens.nomor_dokumen, 
+			dokumens.nomor_tipe_dokumen, 
 			request_ppds.tujuan, 
 			request_ppds.keperluan, 
 			request_ppds.total_estimasi, 
 			request_ppds.status, 
 			request_ppds.periode_berangkat
 		`).
-		Joins("LEFT JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'bonsementara'").
+		Joins("LEFT JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'Bon Sementara'").
 		Where("request_ppds.user_id = ?", userID)
 	err := query.Count(&totalData).Error
 	if err != nil {
@@ -195,8 +186,8 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByUserID(ctx context.Cont
 	return listData, totalData, err
 }
 
-func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByAtasan(ctx context.Context, userID uint, page int, limit int) ([]RiwayatPPDResponse, int64, error) {
-	var listData []RiwayatPPDResponse
+func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByAtasan(ctx context.Context, userID uint, page int, limit int) ([]model.PPDListView, int64, error) {
+	var listData []model.PPDListView
 	var totalData int64
 
 	if page < 1 {
@@ -210,15 +201,15 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByAtasan(ctx context.Cont
 		Table("request_ppds").
 		Select(`
 			request_ppds.id, 
-			dokumens.nomor_dokumen, 
+			dokumens.nomor_tipe_dokumen, 
 			request_ppds.tujuan, 
 			request_ppds.keperluan, 
 			request_ppds.total_estimasi, 
 			request_ppds.status, 
 			request_ppds.periode_berangkat
 		`).
-		Joins("LEFT JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'bonsementara'").
-		Joins("INNER JOIN users ON user.id = user_id").
+		Joins("LEFT JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'Bon Sementara'").
+		Joins("INNER JOIN users ON users.id = request_ppds.user_id").
 		Where("users.atasan_id = ? OR users.id = ?", userID, userID)
 	err := query.Count(&totalData).Error
 	if err != nil {
@@ -234,15 +225,32 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByAtasan(ctx context.Cont
 	return listData, totalData, err
 }
 
-func (r *PerjalananDinas) GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint) ([]model.RequestPPD, error) {
-	var listData []model.RequestPPD
+func (r *PerjalananDinas) GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint, page int, limit int) ([]model.PPDListView, int64, error) {
+	var listData []model.PPDListView
+	var totalData int64
+	
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
 
-	query := r.db.Debug().WithContext(ctx).Table("request_ppds").Select("request_ppds.*")
-
+	query := r.db.WithContext(ctx).
+		Table("request_ppds").
+		Select(`
+			request_ppds.id, 
+			request_ppds.tujuan, 
+			request_ppds.keperluan, 
+			request_ppds.total_estimasi, 
+			request_ppds.status, 
+			request_ppds.periode_berangkat
+		`)
 	switch jabatan {
-	case "atasan":
+	case "Atasan":
 		query = query.Joins("INNER JOIN users ON users.id = request_ppds.user_id").
-			Where("request_ppds.status = ? AND users.atasan_id = ?", "Menunggu Atasan", userID)
+			Where("request_ppds.status ILIKE? AND users.atasan_id = ?", "Menunggu Atasan", userID)
 	case "HRGA":
 		query = query.Where("status = ?", "Menunggu HRGA")
 	case "Direktur":
@@ -250,60 +258,37 @@ func (r *PerjalananDinas) GetListPendingPerjalananDinas(ctx context.Context, jab
 	case "Finance":
 		query = query.Where("status = ?", "Menunggu Finance")
 	default:
-		return []model.RequestPPD{}, nil
+		return []model.PPDListView{}, 0, nil
 	}
 
-	fmt.Println("=== DEBUG GORM ===")
-fmt.Printf("Mengeksekusi query untuk Atasan dengan userID: %v\n", userID)
-
-	err := query.Order("periode_berangkat desc").Find(&listData).Error
-
-	return listData, err
-}
-
-func (r *PerjalananDinas) GetLastNomorDokumenGeneral(ctx context.Context, pattern string) (string, error) {
-	var lastDoc string
-
-	err := r.db.WithContext(ctx).Model(&model.Dokumen{}).
-		Where("nomor_dokumen LIKE ?", pattern).
-		Order("nomor_dokumen desc").
-		First(&lastDoc).Error
+	err := query.Count(&totalData).Error
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", nil
-		}
-		return "", err
+		return nil, 0, err
 	}
-	return lastDoc, nil
+
+	err = query.
+		Order("request_ppds.periode_berangkat DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&listData).Error
+
+	return listData, totalData, err
 }
 
-func (r *PerjalananDinas) GetLastNomorDokumenSpecific(ctx context.Context, tipe string, pattern string) (string, error) {
-	var LastDocspecific string
-
-	err := r.db.WithContext(ctx).Model(&model.Dokumen{}).
-		Where("tipe_dokumen = ? AND nomor_dokumen LIKE ?", tipe, pattern).
-		Order("nomor_dokumen desc").
-		First(&LastDocspecific).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", nil
-		}
-		return "", err
-	}
-	return LastDocspecific, nil
-}
-
-func (r *PerjalananDinas) GetListPPDForRealisasi(ctx context.Context, userID uint) ([]DropdownPPDResponse, error) {
-	var list []DropdownPPDResponse
+func (r *PerjalananDinas) GetListPPDForRealisasi(ctx context.Context, userID uint) ([]model.DropdownPPDView, error) {
+	var list []model.DropdownPPDView
 
 	err := r.db.WithContext(ctx).
 		Table("request_ppds").
 		Select(`request_ppds.id, 
 				dokumens.nomor_tipe_dokumen AS nomor_dokumen, 
-				request_ppd.tujuan,
-				request_ppd.total_estimasi`).
-		Joins("INNER JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD'").
-		Where("request_ppds.user_id = ? AND request_ppds.status = ?", userID, "Disetujui").
+				request_ppds.tujuan,
+				request_ppds.periode_berangkat,
+				request_ppds.periode_kembali,
+				request_ppds.total_estimasi`).
+		Joins("INNER JOIN dokumens ON dokumens.doc_ref_id = request_ppds.id AND dokumens.doc_ref_type = 'RequestPPD' AND dokumens.tipe_dokumen = 'Bon Sementara'").
+		Joins("LEFT JOIN realisasi_bon_sementaras AS rbs ON rbs.request_ppd_id = request_ppds.id").
+		Where("request_ppds.user_id = ? AND request_ppds.status = ?", userID, "Selesai").
 		Where("rbs.id IS NULL").
 		Find(&list).Error
 
@@ -327,4 +312,92 @@ func (r *PerjalananDinas) DeclinePerjalananDinas(ctx context.Context, p DeclineP
 
 		return nil
 	})
+}
+
+func (r *PerjalananDinas) GetItemsByPPDID(ctx context.Context, ppdID uint, userid uint) ([]model.PPDItemView, error) {
+	var items []model.PPDItemView
+
+	query := `
+   	SELECT 
+        h.id, 
+        'Hotel: ' || h.nama_hotel AS uraian, 
+        1 AS kuantitas,          
+        h.harga AS harga_unit, 
+		h.kategori AS kategori,
+        h.harga AS total    
+    FROM ppd_hotels h
+    INNER JOIN request_ppds r ON h.request_ppd_id = r.id
+    WHERE h.request_ppd_id = ? AND r.user_id = ?
+    
+    UNION ALL
+    
+    SELECT 
+        t.id, 
+        'Transport: ' || t.jenis_transportasi AS uraian, 
+        1 AS kuantitas, 
+        t.harga AS harga_unit, 
+		'Transportasi' AS kategori,
+        t.harga AS total
+    FROM ppd_transportasis t
+    INNER JOIN request_ppds r ON t.request_ppd_id = r.id
+    WHERE t.request_ppd_id = ? AND r.user_id = ?
+    
+    UNION ALL
+    
+    SELECT 
+        rt.id, 
+        rt.keterangan AS uraian, 
+        rt.kuantitas AS kuantitas,        
+        rt.harga AS harga_unit,   
+		rt.kategori AS kategori, 
+        (rt.harga * rt.kuantitas) AS total
+    FROM ppd_rincian_tambahans rt
+    INNER JOIN request_ppds r ON rt.request_ppd_id = r.id
+    WHERE rt.request_ppd_id = ? AND r.user_id = ?
+    
+	`
+	err := r.db.WithContext(ctx).Raw(query, ppdID, userid, ppdID, userid, ppdID, userid).Scan(&items).Error
+
+	if err != nil {
+		return nil, err
+	}
+
+	return items, nil
+}
+
+func (r *PerjalananDinas) GetTotalEstimasi(ctx context.Context, ppdid uint) (int64, error) {
+	var totalEstimasi int64
+
+	err := r.db.WithContext(ctx).
+		Table("request_ppds").
+		Select("total_estimasi").
+		Where("id = ?", ppdid).
+		Scan(&totalEstimasi).Error
+	if err != nil {
+		return 0, err
+	}
+
+	return totalEstimasi, nil
+}
+
+func (r *PerjalananDinas) GetUserIDByPPDID(ctx context.Context, ppdID uint) (uint, error) {
+	var userID uint
+	err := r.db.WithContext(ctx).
+		Model(&model.RequestPPD{}).
+		Select("user_id").
+		Where("id = ?", ppdID).
+		Row().Scan(&userID)
+
+	return userID, err
+}
+
+func (r *PerjalananDinas) GetNomorBS(ctx context.Context, ppdID uint) (string, error) {
+	var nomorBS string
+	err := r.db.WithContext(ctx).
+		Model(&model.Dokumen{}).
+		Select("nomor_tipe_dokumen").
+		Where("doc_ref_id = ? AND doc_ref_type = ? AND tipe_dokumen = ?", ppdID, "RequestPPD", "Bon Sementara").
+		Row().Scan(&nomorBS)
+
+	return nomorBS, err
 }

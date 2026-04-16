@@ -5,6 +5,7 @@ package mocks
 import (
 	context "context"
 	model "golang-mmi/internal/model"
+	"golang-mmi/internal/dto"
 
 	mock "github.com/stretchr/testify/mock"
 
@@ -17,7 +18,7 @@ type RealisasiBonRepository struct {
 }
 
 // ApproveRBS provides a mock function with given fields: ctx, p
-func (_m *RealisasiBonRepository) ApproveRBS(ctx context.Context, p repository.ApproveRBSResponse) error {
+func (_m *RealisasiBonRepository) ApproveRBS(ctx context.Context, p repository.ApproveRBSParam) error {
 	ret := _m.Called(ctx, p)
 
 	if len(ret) == 0 {
@@ -25,7 +26,7 @@ func (_m *RealisasiBonRepository) ApproveRBS(ctx context.Context, p repository.A
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, repository.ApproveRBSResponse) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, repository.ApproveRBSParam) error); ok {
 		r0 = rf(ctx, p)
 	} else {
 		r0 = ret.Error(0)
@@ -53,7 +54,7 @@ func (_m *RealisasiBonRepository) CreateRealisasiBon(ctx context.Context, realis
 }
 
 // DeclineRBS provides a mock function with given fields: ctx, p
-func (_m *RealisasiBonRepository) DeclineRBS(ctx context.Context, p repository.DeclineRBSResponse) error {
+func (_m *RealisasiBonRepository) DeclineRBS(ctx context.Context, p repository.DeclineRBSParam) error {
 	ret := _m.Called(ctx, p)
 
 	if len(ret) == 0 {
@@ -61,7 +62,7 @@ func (_m *RealisasiBonRepository) DeclineRBS(ctx context.Context, p repository.D
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, repository.DeclineRBSResponse) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, repository.DeclineRBSParam) error); ok {
 		r0 = rf(ctx, p)
 	} else {
 		r0 = ret.Error(0)
@@ -129,25 +130,25 @@ func (_m *RealisasiBonRepository) GetListPendingRBS(ctx context.Context, jabatan
 }
 
 // GetListRiwayatRealisasiBon provides a mock function with given fields: ctx, page, limit, f
-func (_m *RealisasiBonRepository) GetListRiwayatRealisasiBon(ctx context.Context, page int, limit int, f repository.FilterRBS) ([]repository.RiwayatRBSResponse, int64, int64, error) {
+func (_m *RealisasiBonRepository) GetListRiwayatRealisasiBon(ctx context.Context, page int, limit int, f repository.FilterRBS) ([]dto.ListPPDResponse, int64, int64, error) {
 	ret := _m.Called(ctx, page, limit, f)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListRiwayatRealisasiBon")
 	}
 
-	var r0 []repository.RiwayatRBSResponse
+	var r0 []dto.ListPPDResponse
 	var r1 int64
 	var r2 int64
 	var r3 error
-	if rf, ok := ret.Get(0).(func(context.Context, int, int, repository.FilterRBS) ([]repository.RiwayatRBSResponse, int64, int64, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, int, int, repository.FilterRBS) ([]dto.ListPPDResponse, int64, int64, error)); ok {
 		return rf(ctx, page, limit, f)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, int, int, repository.FilterRBS) []repository.RiwayatRBSResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, int, int, repository.FilterRBS) []dto.ListPPDResponse); ok {
 		r0 = rf(ctx, page, limit, f)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]repository.RiwayatRBSResponse)
+			r0 = ret.Get(0).([]dto.ListPPDResponse)
 		}
 	}
 
@@ -173,25 +174,25 @@ func (_m *RealisasiBonRepository) GetListRiwayatRealisasiBon(ctx context.Context
 }
 
 // GetListRiwayatRealisasiBonById provides a mock function with given fields: ctx, page, limit, userID
-func (_m *RealisasiBonRepository) GetListRiwayatRealisasiBonById(ctx context.Context, page int, limit int, userID uint) ([]repository.RiwayatRBSResponse, int64, int64, error) {
+func (_m *RealisasiBonRepository) GetListRiwayatRealisasiBonById(ctx context.Context, page int, limit int, userID uint) ([]dto.ListPPDResponse, int64, int64, error) {
 	ret := _m.Called(ctx, page, limit, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListRiwayatRealisasiBonById")
 	}
 
-	var r0 []repository.RiwayatRBSResponse
+	var r0 []dto.ListPPDResponse
 	var r1 int64
 	var r2 int64
 	var r3 error
-	if rf, ok := ret.Get(0).(func(context.Context, int, int, uint) ([]repository.RiwayatRBSResponse, int64, int64, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, int, int, uint) ([]dto.ListPPDResponse, int64, int64, error)); ok {
 		return rf(ctx, page, limit, userID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, int, int, uint) []repository.RiwayatRBSResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, int, int, uint) []dto.ListPPDResponse); ok {
 		r0 = rf(ctx, page, limit, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]repository.RiwayatRBSResponse)
+			r0 = ret.Get(0).([]dto.ListPPDResponse)
 		}
 	}
 

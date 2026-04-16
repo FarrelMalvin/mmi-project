@@ -2,15 +2,13 @@ package route
 
 import (
     "github.com/labstack/echo/v5"
-    
-    // Pastikan nama depannya konsisten!
-    "golang-mmi/internal/config"
+   
+    "golang-mmi/internal/middleware"
     "golang-mmi/internal/handler"
+    "golang-mmi/internal/config"
+    "golang-mmi/internal/constant"
 )
 
-// ---------------------------------------------------------
-// 1. RUTE AUTH (Sudah Sempurna)
-// ---------------------------------------------------------
 func RegisterAuth(e *echo.Echo, h *handler.AuthHandler, authMiddleware echo.MiddlewareFunc) {
     authGroup := e.Group("/api/v1/auth")
 
@@ -19,40 +17,61 @@ func RegisterAuth(e *echo.Echo, h *handler.AuthHandler, authMiddleware echo.Midd
     authGroup.POST("/logout", h.Logout, authMiddleware)
 }
 
-// ---------------------------------------------------------
-// 2. RUTE PPD (Perbaikan Parameter)
-// ---------------------------------------------------------
-// UBAH: Parameter ketiga sekarang adalah jwtService
 func RegisterPPDRoutes(e *echo.Echo, h *handler.PerjalananDinasHandler, jwtService *config.JWTService) {
     ppdGroup := e.Group("/api/v1/ppd")
 
-    allowAll := config.RequireRoles(jwtService, "Pegawai", "Atasan", "Direktur", "HRGA", "Finance")
+    allowAll := middleware.RequireRoles(jwtService, "Pegawai", "Atasan", "Direktur", "HRGA", "Finance")
     ppdGroup.GET("", h.GetRiwayatPerjalananDinas, allowAll)
     ppdGroup.POST("", h.CreatePengajuanPerjalanaDinas, allowAll)
-    ppdGroup.GET("/:id", h.GetListPerjalananDetail, allowAll)
+    ppdGroup.GET("/:id", h.GetPerjalananDetail, allowAll)
+    ppdGroup.GET("/:id/item", h.GetItemsByPPDID, allowAll)
     
 
-    allowApprover := config.RequireRoles(jwtService, "Atasan", "Direktur", "HRGA", "Finance")
+    allowApprover := middleware.RequireRoles(jwtService, "Atasan", "Direktur", "HRGA", "Finance")
     ppdGroup.PATCH("/:id/approve", h.ApprovePerjalananDinas, allowApprover)
     ppdGroup.PATCH("/:id/decline", h.DeclinePerjalananDinas, allowApprover)
+    ppdGroup.GET("/:id/download", h.GeneratePPDPDF, allowAll)
+    ppdGroup.GET("/:id/download/bs", h.GenerateBSPDF, allowAll)
 	ppdGroup.GET("/pending", h.GetListPendingPerjalananDinas, allowAll)
 }
 
-// ---------------------------------------------------------
-// 3. RUTE RBS (Masih Pukul Rata)
-// ---------------------------------------------------------
-func RegisterRBSRoutes(e *echo.Echo, h *handler.RealisasiBonsHandler, authMiddleware echo.MiddlewareFunc) {
+func RegisterRBSRoutes(e *echo.Echo, h *handler.RealisasiBonsHandler, jwtService *config.JWTService) {
     rbsGroup := e.Group("/api/v1/rbs")
-    
-    // Catatan: Ini berarti SEMUA role yang dilempar dari main.go bisa melakukan Approve/Decline RBS.
-    // Jika kamu ingin membatasinya seperti PPD, rute ini harus di-refactor nanti.
-    rbsGroup.Use(authMiddleware)
 
-    rbsGroup.GET("", h.GetListRBS)
-    rbsGroup.POST("", h.CreateRealisasiBon)
-    rbsGroup.GET("/dropdown-ppd", h.GetDropdownPPD)
-    rbsGroup.GET("/:id", h.GetListRBSDetail)
-    rbsGroup.PATCH("/:id/approve", h.ApproveRBS)
-    rbsGroup.PATCH("/:id/decline", h.DeclineRBS)
-    rbsGroup.GET("/pending", h.GetListPendingRBS)
+    allowAll := middleware.RequireRoles(jwtService, "Pegawai", "Atasan", "Direktur", "HRGA", "Finance")
+    rbsGroup.GET("", h.GetListRBS, allowAll)
+    rbsGroup.POST("", h.CreateRealisasiBon, allowAll)
+     rbsGroup.GET("/options", h.GetDropdownPPD, allowAll)
+    rbsGroup.GET("/:id", h.GetListRBSDetail, allowAll)
+   
+    
+
+    allowApprover := middleware.RequireRoles(jwtService, "Atasan", "Direktur", "HRGA", "Finance")
+    rbsGroup.PATCH("/:id/approve", h.ApproveRBS, allowApprover)
+    rbsGroup.PATCH("/:id/decline", h.DeclineRBS, allowApprover)
+	rbsGroup.GET("/pending", h.GetListPendingRBS, allowAll)
+    rbsGroup.GET("/:id/download", h.GenerateRBSPDF, allowAll)
+    rbsGroup.GET("/download/excel", h.DownloadExcel, allowAll)
+}
+
+func RegisterUserRoutes(e *echo.Echo, h *handler.UserHandler, jwtService *config.JWTService) {
+    userGroup := e.Group("/api/v1/user")
+    allowAll := middleware.RequireRoles(jwtService, "Pegawai", "Atasan", "Direktur", "HRGA", "Finance")
+    userGroup.POST("/signature", h.UpdateSignature, allowAll)
+}
+
+func RegisterNotificationRoutes(e *echo.Echo, h *handler.NotificationHandler) {
+	e.GET("/ws", h.HandleWS)
+
+	e.POST("/trigger", h.TriggerNotif)
+}
+
+func RegisterUploadRoutes(e *echo.Echo, h *handler.UploadHandler, jwtService *config.JWTService) {
+    upload := e.Group("/api/v1/upload")
+    upload.Use(middleware.RequireRoles(jwtService,
+        constant.JabatanPegawai,
+        constant.JabatanAtasan,
+        constant.JabatanHRGA,
+    ))
+    upload.POST("/struk", h.UploadStruk)
 }

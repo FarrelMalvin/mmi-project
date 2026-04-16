@@ -1,12 +1,17 @@
 package handler
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/labstack/echo/v5"
+	"github.com/go-playground/validator/v10"
 
-	"golang-mmi/internal/model"
+	"golang-mmi/internal/constant"
+	"golang-mmi/internal/dto"
+	"golang-mmi/internal/middleware"
 	"golang-mmi/internal/service"
 )
 
@@ -20,85 +25,155 @@ func NewRealisasiBonHandler(service service.ServiceRBS) *RealisasiBonsHandler {
 	}
 }
 
+var validaterbs = validator.New()
+
 func (h *RealisasiBonsHandler) ApproveRBS(c *echo.Context) error {
-	idParam := c.Param("id")
-	ppdid, err := strconv.ParseUint(idParam, 10, 32)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Format ID dokumen tidak valid",
+	var req dto.ApproveRBSRequest
+
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format data request tidak valid",
 		})
 	}
 
-	var reqBody model.ApprovePPDRequest
-	if err := c.Bind(&reqBody); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Gagal membaca data request body",
+	idParam := c.Param("id")
+	rbsID, err := strconv.ParseUint(idParam, 10, 32)
+	if err != nil || rbsID == 0 {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "ID Realisasi Bon Sementara tidak valid",
 		})
 	}
+	req.RealisasiBonID = uint(rbsID)
 
 	ctx := c.Request().Context()
-
-	err = h.service.ApproveRBS(ctx, uint(ppdid), reqBody.Catatan)
-	if err != nil {
-		statusCode := http.StatusInternalServerError
-		if err.Error() == "perjalanan dinas tidak ditemukan" {
-			statusCode = http.StatusNotFound
-		} else if err.Error() == "tidak dapat menyetujui perjalanan dinas dengan status saat ini" || err.Error() == "status perjalanan dinas tidak valid" {
-			statusCode = http.StatusUnprocessableEntity
-		}
-
-		return c.JSON(statusCode, map[string]interface{}{
-			"message": err.Error(),
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
 		})
 	}
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Dokumen Perjalanan Dinas berhasil disetujui",
+	req.UserID = claims.UserID
+	req.Jabatan = claims.Jabatan
+
+	if err := h.service.ApproveRBS(ctx, &req); err != nil {
+		if errors.Is(err, service.ErrRBSTidakDitemukan) {
+			return c.JSON(http.StatusNotFound, dto.ErrorResponse{
+				Code:    http.StatusNotFound,
+				Status:  "Not Found",
+				Message: "Realisasi bon sementara tidak ditemukan",
+			})
+		}
+		if errors.Is(err, service.ErrRBSStatusTidakValid) {
+			return c.JSON(http.StatusUnprocessableEntity, dto.ErrorResponse{
+				Code:    http.StatusUnprocessableEntity,
+				Status:  "Unprocessable Entity",
+				Message: "Status tidak valid untuk aksi ini",
+			})
+		}
+		if errors.Is(err, service.ErrRBSJabatanTidakValid) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Jabatan tidak memiliki izin untuk aksi ini",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal menyetujui realisasi bon sementara",
+		})
+	}
+
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Realisasi bon sementara berhasil disetujui",
 	})
 }
 
 func (h *RealisasiBonsHandler) DeclineRBS(c *echo.Context) error {
-	idParam := c.Param("id")
-	ppdid, err := strconv.ParseUint(idParam, 10, 32)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Format ID dokumen tidak valid",
+	var req dto.DeclineRBSRequest
+
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format data request tidak valid",
 		})
 	}
 
-	var reqBody model.DeclinePPDRequest
-	if err := c.Bind(&reqBody); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Gagal membaca data request body",
+	idParam := c.Param("id")
+	rbsID, err := strconv.ParseUint(idParam, 10, 32)
+	if err != nil || rbsID == 0 {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "ID Realisasi Bon Sementara tidak valid",
 		})
 	}
+	req.RealisasiBonID = uint(rbsID)
 
 	ctx := c.Request().Context()
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+	req.UserID = claims.UserID
+	req.Jabatan = claims.Jabatan
 
-	err = h.service.DeclineRBS(ctx, uint(ppdid), reqBody.Catatan)
-	if err != nil {
-		statusCode := http.StatusInternalServerError
-		if err.Error() == "perjalanan dinas tidak ditemukan" {
-			statusCode = http.StatusNotFound
-		} else if err.Error() == "tidak dapat menolak perjalanan dinas dengan status saat ini" || err.Error() == "status perjalanan dinas tidak valid" {
-			statusCode = http.StatusUnprocessableEntity
+	if err := h.service.DeclineRBS(ctx, req); err != nil {
+		if errors.Is(err, service.ErrRBSTidakDitemukan) {
+			return c.JSON(http.StatusNotFound, dto.ErrorResponse{
+				Code:    http.StatusNotFound,
+				Status:  "Not Found",
+				Message: "Realisasi bon sementara tidak ditemukan",
+			})
 		}
-
-		return c.JSON(statusCode, map[string]interface{}{
-			"message": err.Error(),
+		if errors.Is(err, service.ErrRBSStatusTidakValid) {
+			return c.JSON(http.StatusUnprocessableEntity, dto.ErrorResponse{
+				Code:    http.StatusUnprocessableEntity,
+				Status:  "Unprocessable Entity",
+				Message: "Status tidak valid untuk aksi ini",
+			})
+		}
+		if errors.Is(err, service.ErrRBSJabatanTidakValid) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Jabatan tidak memiliki izin untuk aksi ini",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal menolak realisasi bon sementara",
 		})
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Dokumen Perjalanan Dinas berhasil disetujui",
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Realisasi bon sementara berhasil ditolak",
 	})
 }
 
 func (h *RealisasiBonsHandler) GetListRBS(c *echo.Context) error {
-	var req model.GetListRBSRequest
+	var req dto.RBSListRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Format query parameter tidak valid",
-			"error":   err.Error(),
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format query parameter tidak valid",
 		})
 	}
 
@@ -110,35 +185,49 @@ func (h *RealisasiBonsHandler) GetListRBS(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	data, totalData, totalPage, err := h.service.GetListRBS(ctx, req.Page, req.Limit, req.Tahun, req.Bulan)
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
 
+	req.UserID = claims.UserID
+	req.Jabatan = claims.Jabatan
+
+	data, totalData, totalSum, err := h.service.GetListRBS(ctx, req)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"message": "Gagal mengambil daftar Realisasi Bon Sementara",
-			"error":   err.Error(),
+		if errors.Is(err, service.ErrRBSJabatanTidakValid) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Anda tidak memiliki akses untuk melihat daftar ini",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal mengambil daftar realisasi bon sementara",
 		})
 	}
 
-	if len(data) == 0 {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"message": "Data tidak ditemukan",
-			"data":    []interface{}{},
-			"meta": map[string]interface{}{
-				"page":       req.Page,
-				"limit":      req.Limit,
-				"total_data": 0,
-				"total_page": 0,
-			},
-		})
+	totalPage := int(totalData) / req.Limit
+	if int(totalData)%req.Limit > 0 {
+		totalPage++
 	}
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Sukses mengambil daftar Realisasi Bon Sementara",
-		"data":    data,
-		"meta": map[string]interface{}{
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Sukses mengambil daftar realisasi bon sementara",
+		Data:    data,
+		Meta: map[string]interface{}{
 			"page":       req.Page,
 			"limit":      req.Limit,
 			"total_data": totalData,
+			"total_sum":  totalSum,
 			"total_page": totalPage,
 		},
 	})
@@ -146,129 +235,265 @@ func (h *RealisasiBonsHandler) GetListRBS(c *echo.Context) error {
 
 func (h *RealisasiBonsHandler) GetListPendingRBS(c *echo.Context) error {
 	ctx := c.Request().Context()
-	data, err := h.service.GetListPendingRBS(ctx)
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+
+	data, err := h.service.GetListPendingRBS(ctx, claims.UserID, claims.Jabatan)
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err.Error() == "invalid user ID in context" || err.Error() == "invalid jabatan in context" {
-			statusCode = http.StatusUnauthorized
+		if errors.Is(err, service.ErrRBSAksesditolak) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Anda tidak memiliki akses ke fitur ini",
+			})
 		}
-
-		return c.JSON(statusCode, map[string]interface{}{
-			"message": "Gagal mengambil daftar dokumen pending",
-			"error":   err.Error(),
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal mengambil daftar pending realisasi bon sementara",
 		})
 	}
 
-	if len(data) == 0 {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"message": "Tidak ada dokumen perjalanan dinas yang menunggu persetujuan Anda",
-			"data":    []interface{}{},
-		})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Sukses mengambil daftar perjalanan dinas",
-		"data":    data,
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Sukses mengambil daftar pending realisasi bon sementara",
+		Data:    data,
 	})
 }
 
 func (h *RealisasiBonsHandler) CreateRealisasiBon(c *echo.Context) error {
-	var req model.CreateRBSRequest
+	var req dto.CreateRBSRequest
 	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Format data request tidak valid",
-			"error":   err.Error(),
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format data request tidak valid",
+		})
+	}
+
+	if err := validaterbs.Struct(req); err != nil {
+		errMessage := "Data tidak lengkap atau tidak valid"
+		if validationErrors, ok := err.(validator.ValidationErrors); ok && len(validationErrors) > 0 {
+		}
+
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: errMessage,
 		})
 	}
 
 	ctx := c.Request().Context()
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+	req.UserID = claims.UserID
+	req.Jabatan = claims.Jabatan
 
-	var rincianModel []model.RBSrincian
-	for _, r := range req.RBSrincian {
-		rincianModel = append(rincianModel, model.RBSrincian{
-			HargaUnit: r.Harga,
-			Kuantitas: r.Jumlah,
+	if err := h.service.CreateRealisasiBon(ctx, req); err != nil {
+		if errors.Is(err, service.ErrRBSJabatanTidakValid) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Jabatan tidak memiliki izin untuk membuat realisasi",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal membuat realisasi bon sementara",
 		})
 	}
 
-	reqModel := &model.RealisasiBonSementara{
-		RequestPPDID: req.RequestPPDID,
-		RBSrincian:   rincianModel,
-	}
-
-	err := h.service.CreateRealisasiBon(ctx, reqModel)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"message": "Gagal membuat realisasi",
-			"error":   err.Error(),
-		})
-	}
-
-	return c.JSON(http.StatusCreated, map[string]interface{}{
-		"message": "Realisasi Bon berhasil diajukan",
+	return c.JSON(http.StatusCreated, dto.SuccessResponse{
+		Code:    http.StatusCreated,
+		Status:  "Created",
+		Message: "Realisasi bon sementara berhasil diajukan",
 	})
 }
 
 func (h *RealisasiBonsHandler) GetListRBSDetail(c *echo.Context) error {
 	idParam := c.Param("id")
-
-	ppdid, err := strconv.ParseUint(idParam, 10, 32)
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]interface{}{
-			"message": "Format ID dokumen tidak valid. ID harus berupa angka.",
-			"error":   err.Error(),
+	rbsID, err := strconv.ParseUint(idParam, 10, 32)
+	if err != nil || rbsID == 0 {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format ID dokumen tidak valid",
 		})
 	}
 
 	ctx := c.Request().Context()
-
-	data, err := h.service.GetListRBSDetail(ctx, uint(ppdid))
+	data, err := h.service.GetListRBSDetail(ctx, uint(rbsID))
 	if err != nil {
-		statusCode := http.StatusInternalServerError
-
-		if err.Error() == "detail perjalanan dinas tidak ditemukan" {
-			statusCode = http.StatusNotFound
+		if errors.Is(err, service.ErrRBSTidakDitemukan) {
+			return c.JSON(http.StatusNotFound, dto.ErrorResponse{
+				Code:    http.StatusNotFound,
+				Status:  "Not Found",
+				Message: "Detail realisasi bon sementara tidak ditemukan",
+			})
 		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal mengambil detail realisasi bon sementara",
+		})
+	}
 
-		return c.JSON(statusCode, map[string]interface{}{
-			"message": "Gagal mengambil data detail perjalanan dinas",
-			"error":   err.Error(),
-		})
-	}
-	if len(data) == 0 {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"message": "Tidak ada rincian tambahan untuk perjalanan dinas ini",
-			"data":    []interface{}{},
-		})
-	}
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Sukses mengambil detail rincian tambahan",
-		"data":    data,
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Sukses mengambil detail realisasi bon sementara",
+		Data:    data,
 	})
 }
 
 func (h *RealisasiBonsHandler) GetDropdownPPD(c *echo.Context) error {
 	ctx := c.Request().Context()
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
 
-	data, err := h.service.GetDropdownPPD(ctx)
+	data, err := h.service.GetDropdownPPD(ctx, claims.UserID)
 	if err != nil {
-
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"message": "Gagal mengambil daftar PPD untuk dropdown",
-			"error":   err.Error(),
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal mengambil daftar PPD untuk dropdown",
 		})
 	}
 
-	if len(data) == 0 {
-		return c.JSON(http.StatusOK, map[string]interface{}{
-			"message": "Tidak ada data PPD yang tersedia untuk direalisasikan",
-			"data":    []interface{}{},
-		})
-	}
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message": "Sukses mengambil data dropdown PPD",
-		"data":    data,
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Sukses mengambil data dropdown PPD",
+		Data:    data,
 	})
+}
+
+func (h *RealisasiBonsHandler) GenerateRBSPDF(c *echo.Context) error {
+	ctx := c.Request().Context()
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+
+	idParam := c.Param("id")
+	rbsID, err := strconv.Atoi(idParam)
+	if err != nil || rbsID <= 0 {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "ID Realisasi Bon Sementara tidak valid",
+		})
+	}
+
+	filename := fmt.Sprintf("Realisasi_Bon_Sementara_%d.pdf", rbsID)
+	c.Response().Header().Set("Content-Type", "application/pdf")
+	c.Response().Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+	err = h.service.FillRBSPDF(ctx, uint(rbsID), claims.UserID, constant.RBSTemplatePath, c.Response())
+	if err != nil {
+		c.Response().Header().Del("Content-Type")
+		c.Response().Header().Del("Content-Disposition")
+
+		if errors.Is(err, service.ErrRBSAksesditolak) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Akses ditolak",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal menghasilkan PDF Realisasi Bon Sementara",
+		})
+	}
+
+	return nil
+}
+
+func (h *RealisasiBonsHandler) DownloadExcel(c *echo.Context) error {
+	ctx := c.Request().Context()
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+
+	var req dto.RBSListRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format filter tidak valid",
+		})
+	}
+	req.Jabatan = claims.Jabatan
+	req.UserID = claims.UserID
+
+	filename := buildExcelFilename(req.Bulan, req.Tahun)
+	c.Response().Header().Set(
+		"Content-Type",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+	)
+	c.Response().Header().Set(
+		"Content-Disposition",
+		fmt.Sprintf(`attachment; filename="%s"`, filename),
+	)
+
+	if err := h.service.ExportRBSExcel(ctx, req, c.Response()); err != nil {
+		c.Response().Header().Del("Content-Type")
+		c.Response().Header().Del("Content-Disposition")
+
+		if errors.Is(err, service.ErrRBSAksesditolak) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Hanya HRGA yang dapat mengakses fitur export excel",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal menghasilkan file Excel",
+		})
+	}
+
+	return nil
+}
+
+func buildExcelFilename(bulan, tahun int) string {
+	if bulan > 0 && tahun > 0 {
+		return fmt.Sprintf("Rekap_Realisasi_Bon_Sementara_%02d_%d.xlsx", bulan, tahun)
+	}
+	if tahun > 0 {
+		return fmt.Sprintf("Rekap_Realisasi_Bon_Sementara_%d.xlsx", tahun)
+	}
+	return "Rekap_Realisasi_Bon_Sementara_Semua.xlsx"
 }

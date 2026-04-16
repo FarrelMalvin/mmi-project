@@ -4,9 +4,9 @@ import "time"
 
 type PPDTransportasi struct {
 	Id           uint `gorm:"primaryKey" json:"id"`
-	RequestPPDID uint `gorm:"uniqueindex" json:"request_ppd_id"`
+	RequestPPDID uint `gorm:"index" json:"request_ppd_id"`
 
-	TipePerjalanan    string    `gorm:"type:varchar(10)" json:"tipe_perjalanan"`
+	TipePerjalanan    string    `gorm:"type:varchar(20)" json:"tipe_perjalanan"`
 	KotaAsal          string    `gorm:"type:varchar(20)" json:"kota_asal"`
 	KotaTujuan        string    `gorm:"type:varchar(20)" json:"kota_tujuan"`
 	JenisTransportasi string    `gorm:"type:varchar(20)" json:"jenis_transportasi"`

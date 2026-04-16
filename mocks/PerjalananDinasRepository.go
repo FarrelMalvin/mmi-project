@@ -5,6 +5,7 @@ package mocks
 import (
 	context "context"
 	model "golang-mmi/internal/model"
+	 "golang-mmi/internal/dto"
 
 	mock "github.com/stretchr/testify/mock"
 
@@ -155,23 +156,23 @@ func (_m *PerjalananDinasRepository) GetLastNomorDokumenSpecific(ctx context.Con
 }
 
 // GetListPPDForRealisasi provides a mock function with given fields: ctx, userID
-func (_m *PerjalananDinasRepository) GetListPPDForRealisasi(ctx context.Context, userID uint) ([]repository.DropdownPPDResponse, error) {
+func (_m *PerjalananDinasRepository) GetListPPDForRealisasi(ctx context.Context, userID uint) ([]dto.DropdownPPDResponse, error) {
 	ret := _m.Called(ctx, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListPPDForRealisasi")
 	}
 
-	var r0 []repository.DropdownPPDResponse
+	var r0 []dto.DropdownPPDResponse
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]repository.DropdownPPDResponse, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, uint) ([]dto.DropdownPPDResponse, error)); ok {
 		return rf(ctx, userID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint) []repository.DropdownPPDResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, uint) []dto.DropdownPPDResponse); ok {
 		r0 = rf(ctx, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]repository.DropdownPPDResponse)
+			r0 = ret.Get(0).([]dto.DropdownPPDResponse)
 		}
 	}
 
@@ -185,23 +186,23 @@ func (_m *PerjalananDinasRepository) GetListPPDForRealisasi(ctx context.Context,
 }
 
 // GetListPendingPerjalananDinas provides a mock function with given fields: ctx, jabatan, userID
-func (_m *PerjalananDinasRepository) GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint) ([]model.RequestPPD, error) {
+func (_m *PerjalananDinasRepository) GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint) ([]dto.ListPPDResponse, error) {
 	ret := _m.Called(ctx, jabatan, userID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListPendingPerjalananDinas")
 	}
 
-	var r0 []model.RequestPPD
+	var r0 []dto.ListPPDResponse
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, uint) ([]model.RequestPPD, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, uint) ([]dto.ListPPDResponse, error)); ok {
 		return rf(ctx, jabatan, userID)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, uint) []model.RequestPPD); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, uint) []dto.ListPPDResponse); ok {
 		r0 = rf(ctx, jabatan, userID)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]model.RequestPPD)
+			r0 = ret.Get(0).([]dto.ListPPDResponse)
 		}
 	}
 
@@ -215,24 +216,24 @@ func (_m *PerjalananDinasRepository) GetListPendingPerjalananDinas(ctx context.C
 }
 
 // GetListRiwayatPerjalananDinas provides a mock function with given fields: ctx, page, limit
-func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinas(ctx context.Context, page int, limit int) ([]repository.RiwayatPPDResponse, int64, error) {
+func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinas(ctx context.Context, page int, limit int) ([]dto.ListPPDResponse, int64, error) {
 	ret := _m.Called(ctx, page, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListRiwayatPerjalananDinas")
 	}
 
-	var r0 []repository.RiwayatPPDResponse
+	var r0 []dto.ListPPDResponse
 	var r1 int64
 	var r2 error
-	if rf, ok := ret.Get(0).(func(context.Context, int, int) ([]repository.RiwayatPPDResponse, int64, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, int, int) ([]dto.ListPPDResponse, int64, error)); ok {
 		return rf(ctx, page, limit)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, int, int) []repository.RiwayatPPDResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, int, int) []dto.ListPPDResponse); ok {
 		r0 = rf(ctx, page, limit)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]repository.RiwayatPPDResponse)
+			r0 = ret.Get(0).([]dto.ListPPDResponse)
 		}
 	}
 
@@ -252,24 +253,24 @@ func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinas(ctx context.C
 }
 
 // GetListRiwayatPerjalananDinasByAtasan provides a mock function with given fields: ctx, userID, page, limit
-func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinasByAtasan(ctx context.Context, userID uint, page int, limit int) ([]repository.RiwayatPPDResponse, int64, error) {
+func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinasByAtasan(ctx context.Context, userID uint, page int, limit int) ([]dto.ListPPDResponse, int64, error) {
 	ret := _m.Called(ctx, userID, page, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListRiwayatPerjalananDinasByAtasan")
 	}
 
-	var r0 []repository.RiwayatPPDResponse
+	var r0 []dto.ListPPDResponse
 	var r1 int64
 	var r2 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) ([]repository.RiwayatPPDResponse, int64, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) ([]dto.ListPPDResponse, int64, error)); ok {
 		return rf(ctx, userID, page, limit)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) []repository.RiwayatPPDResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) []dto.ListPPDResponse); ok {
 		r0 = rf(ctx, userID, page, limit)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]repository.RiwayatPPDResponse)
+			r0 = ret.Get(0).([]dto.ListPPDResponse)
 		}
 	}
 
@@ -289,24 +290,24 @@ func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinasByAtasan(ctx c
 }
 
 // GetListRiwayatPerjalananDinasByUserID provides a mock function with given fields: ctx, userID, page, limit
-func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page int, limit int) ([]repository.RiwayatPPDResponse, int64, error) {
+func (_m *PerjalananDinasRepository) GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page int, limit int) ([]dto.ListPPDResponse, int64, error) {
 	ret := _m.Called(ctx, userID, page, limit)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetListRiwayatPerjalananDinasByUserID")
 	}
 
-	var r0 []repository.RiwayatPPDResponse
+	var r0 []dto.ListPPDResponse
 	var r1 int64
 	var r2 error
-	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) ([]repository.RiwayatPPDResponse, int64, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) ([]dto.ListPPDResponse, int64, error)); ok {
 		return rf(ctx, userID, page, limit)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) []repository.RiwayatPPDResponse); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, uint, int, int) []dto.ListPPDResponse); ok {
 		r0 = rf(ctx, userID, page, limit)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]repository.RiwayatPPDResponse)
+			r0 = ret.Get(0).([]dto.ListPPDResponse)
 		}
 	}
 
