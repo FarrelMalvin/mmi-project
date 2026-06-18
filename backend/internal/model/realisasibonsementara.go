@@ -6,6 +6,7 @@ type RealisasiBonSementara struct {
 	Id           uint `gorm:"primarykey" json:"id"`
 	RequestPPDID uint `gorm:"uniqueindex" json:"req"`
 	UserID       uint `gorm:"index" json:"user_id"`
+	User         User `gorm:"foreignKey:UserID" json:"user"`
 
 	NomorBonSementara string    `gorm:"type:varchar(50)" json:"nomor_bon_sementara"`
 	TotalRealisasi    int64     `json:"total_realisasi"`
@@ -19,6 +20,10 @@ type RealisasiBonSementara struct {
 	RBSrincian         []RBSrincian      `gorm:"foreignKey:RBSID" json:"rbs_rincian"`
 	RiwayatPersetujuan []RiwayatApproval `gorm:"polymorphic:DocRef;polymorphicValue:RealisasiBonSementara" json:"riwayat_persetujuan"`
 	Dokumen            []Dokumen         `gorm:"polymorphic:DocRef;polymorphicValue:RealisasiBonSementara" json:"dokumen_terdaftar"`
+}
+
+func (RBSrincian) TableName() string {
+	return "rbs_rincians"
 }
 
 type RBSListView struct {

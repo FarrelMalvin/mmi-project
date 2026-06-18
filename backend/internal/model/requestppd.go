@@ -6,24 +6,26 @@ import (
 
 type RequestPPD struct {
 	Id     uint `gorm:"primaryKey" json:"id"`
-	UserID uint `gorm:"index" json:"user_id"`
+	UserID uint `gorm:"index;not null" json:"user_id"`
 	User   User `gorm:"foreignKey:UserID" json:"user"`
 
 	Tujuan           string    `gorm:"type:varchar(100);not null" json:"tujuan"`
-	PeriodeBerangkat time.Time `gorm:"index" json:"periode_berangkat"`
-	PeriodeKembali   time.Time `json:"periode_kembali"`
-	Keperluan        string    `gorm:"type:text" json:"keperluan"`
-	Status           string    `gorm:"type:varchar(20);default:'pending';index" json:"status"`
-	TotalEstimasi    int64     `json:"total_estimasi"`
+	PeriodeBerangkat time.Time `gorm:"index;not null" json:"periode_berangkat"`
+	PeriodeKembali   time.Time `gorm:"not null" json:"periode_kembali"`
+	Keperluan        string    `gorm:"type:text;not null" json:"keperluan"`
+	Status           string    `gorm:"type:varchar(50);not null;index" json:"status"`
+	TotalEstimasi    int64     `gorm:"not null;default:0" json:"total_estimasi"`
 	UrlDokumen       string    `gorm:"type:varchar(255)" json:"url_dokumen"`
 	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 
-	RincianTambahan       []PPDRincianTambahan  `gorm:"foreignKey:RequestPPDID" json:"rincian_tambahan"`
-	RincianHotel          *PPDHotel             `gorm:"foreignKey:RequestPPDID" json:"rincian_hotel"`
-	RincianTransportasi   *[]PPDTransportasi    `gorm:"foreignKey:RequestPPDID" json:"rincian_transportasi"`
-	RealisasiBonSementara RealisasiBonSementara `gorm:"foreignKey:RequestPPDID" json:"realisasi_bon_sementara"`
-	RiwayatPersetujuan    []RiwayatApproval     `gorm:"polymorphic:DocRef;polymorphicValue:RequestPPD" json:"riwayat_persetujuan"`
-	Dokumen               []Dokumen             `gorm:"polymorphic:DocRef;polymorphicValue:RequestPPD" json:"dokumen_terdaftar"`
+	RincianTambahan     []PPDRincianTambahan `gorm:"foreignKey:RequestPPDID" json:"rincian_tambahan"`
+	RincianHotel        *PPDHotel            `gorm:"foreignKey:RequestPPDID" json:"rincian_hotel,omitempty"`
+	RincianTransportasi []PPDTransportasi    `gorm:"foreignKey:RequestPPDID" json:"rincian_transportasi"`
+
+	RealisasiBonSementara *RealisasiBonSementara `gorm:"foreignKey:RequestPPDID" json:"realisasi_bon_sementara,omitempty"`
+	RiwayatPersetujuan    []RiwayatApproval      `gorm:"polymorphic:DocRef;polymorphicValue:RequestPPD" json:"riwayat_persetujuan"`
+	Dokumen               []Dokumen              `gorm:"polymorphic:DocRef;polymorphicValue:RequestPPD" json:"dokumen_terdaftar"`
 }
 
 type PPDListView struct {

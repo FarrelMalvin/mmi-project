@@ -122,9 +122,9 @@ function CreatePPDDialog({ open, onClose, onSuccess }: { open: boolean; onClose:
     let total = 0;
     bonForm.rincian_tambahan.forEach((item: any) => { total += (parseFloat(item.harga) || 0); });
     if (bonForm.rincian_hotel && bonForm.rincian_hotel.harga) {
-      const checkin = new Date(bonForm.rincian_hotel.check_in);
-      const checkout = new Date(bonForm.rincian_hotel.check_out);
-      const nights = Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24));
+      const checkin = new Date(bonForm.rincian_hotel.check_in).toISOString();
+      const checkout = new Date(bonForm.rincian_hotel.check_out).toISOString();
+      const nights = Math.ceil((new Date(checkout).getTime() - new Date(checkin).getTime()) / (1000 * 60 * 60 * 24));
       total += (parseFloat(bonForm.rincian_hotel.harga) || 0) * (nights > 0 ? nights : 1);
     }
     bonForm.rincian_transportasi.forEach((trans: any) => { total += (parseFloat(trans.harga) || 0); });
@@ -141,7 +141,13 @@ function CreatePPDDialog({ open, onClose, onSuccess }: { open: boolean; onClose:
     });
   };
 
-  const addTransportItem = () => setBonForm((p: any) => ({ ...p, rincian_transportasi: [...p.rincian_transportasi, { kota_asal: "", kota_tujuan: "", jenis_transportasi: "", tipe_perjalanan: "Keberangkatan", jam_berangkat: "", harga: 0 }] }));
+  const addTransportItem = () => {
+  if (bonForm.rincian_transportasi.length >= 2) {
+    toast.error("Maksimal 2 rute transportasi");
+    return;
+  }
+  setBonForm((p: any) => ({ ...p, rincian_transportasi: [...p.rincian_transportasi, { kota_asal: "", kota_tujuan: "", jenis_transportasi: "", tipe_perjalanan: "Keberangkatan", jam_berangkat: "", harga: 0 }] }));
+};
   const removeTransportItem = (idx: number) => setBonForm((p: any) => ({ ...p, rincian_transportasi: p.rincian_transportasi.filter((_: any, i: number) => i !== idx) }));
   const updateTransportItem = (idx: number, field: string, val: string) => {
     setBonForm((p: any) => {
@@ -168,15 +174,15 @@ function CreatePPDDialog({ open, onClose, onSuccess }: { open: boolean; onClose:
     try {
       let totalHargaHotel = 0;
       if (bonForm.rincian_hotel.check_in && bonForm.rincian_hotel.check_out && bonForm.rincian_hotel.harga) {
-        const checkin = new Date(bonForm.rincian_hotel.check_in);
-        const checkout = new Date(bonForm.rincian_hotel.check_out);
-        const nights = Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24));
+        const checkin = new Date(bonForm.rincian_hotel.check_in).toISOString();
+        const checkout = new Date(bonForm.rincian_hotel.check_out).toISOString();
+        const nights = Math.ceil((new Date(checkout).getTime() - new Date(checkin).getTime()) / (1000 * 60 * 60 * 24));
         totalHargaHotel = (parseFloat(bonForm.rincian_hotel.harga) || 0) * (nights > 0 ? nights : 1);
       }
       const payload = {
         tujuan: bonForm.tujuan, tanggal_berangkat: `${bonForm.tanggal_berangkat}T00:00:00Z`, tanggal_kembali: `${bonForm.tanggal_kembali}T00:00:00Z`,
         keperluan: bonForm.keperluan, url_dokumen: bonForm.url_dokumen || "",
-        rincian_hotel: bonForm.rincian_hotel.nama_hotel ? { ...bonForm.rincian_hotel, harga: parseFloat(bonForm.rincian_hotel.harga) || 0, total_harga: totalHargaHotel, kategori: "Akomodasi" } : null,
+        rincian_hotel: bonForm.rincian_hotel.nama_hotel ? { ...bonForm.rincian_hotel, check_in: bonForm.rincian_hotel.check_in ? `${bonForm.rincian_hotel.check_in}T00:00:00Z` : "", check_out: bonForm.rincian_hotel.check_out ? `${bonForm.rincian_hotel.check_out}T00:00:00Z` : "", harga: parseFloat(bonForm.rincian_hotel.harga) || 0, total_harga: totalHargaHotel, kategori: "Akomodasi" } : null,
         rincian_transportasi: bonForm.rincian_transportasi.map((t: any) => ({ ...t, harga: parseFloat(t.harga) || 0, jam_berangkat: t.jam_berangkat ? `${bonForm.tanggal_berangkat}T${t.jam_berangkat}:00Z` : "" })),
         rincian_tambahan: bonForm.rincian_tambahan.map((item: any) => ({ kategori: item.kategori, keterangan: item.keterangan, kuantitas: parseInt(item.kuantitas) || 1, harga: parseFloat(item.harga) || 0 }))
       };
@@ -238,7 +244,11 @@ function CreatePPDDialog({ open, onClose, onSuccess }: { open: boolean; onClose:
           <div>
             <div className="flex items-center justify-between mb-3">
               <h4 className="text-sm font-bold">TRANSPORTASI (Opsional)</h4>
-              <Button variant="outline" size="sm" onClick={addTransportItem} className="h-7 gap-1"><Plus className="h-3 w-3" />Tambah Rute</Button>
+              {bonForm.rincian_transportasi.length < 2 && (
+              <Button variant="outline" size="sm" onClick={addTransportItem} className="h-7 gap-1">
+                <Plus className="h-3 w-3" />Tambah Rute
+              </Button>
+            )}
             </div>
             <div className="space-y-2">
               {bonForm.rincian_transportasi.map((item: any, idx: number) => (
@@ -848,9 +858,9 @@ function UniversalView({ userRole }: { userRole: string }) {
     try {
       let totalHargaHotel = 0;
       if (editForm.rincian_hotel?.check_in && editForm.rincian_hotel?.check_out && editForm.rincian_hotel?.harga) {
-        const checkin = new Date(editForm.rincian_hotel.check_in);
-        const checkout = new Date(editForm.rincian_hotel.check_out);
-        const nights = Math.ceil((checkout.getTime() - checkin.getTime()) / (1000 * 60 * 60 * 24));
+        const checkin = new Date(editForm.rincian_hotel.check_in).toISOString();
+        const checkout = new Date(editForm.rincian_hotel.check_out).toISOString();
+        const nights = Math.ceil((new Date(checkout).getTime() - new Date(checkin).getTime()) / (1000 * 60 * 60 * 24));
         totalHargaHotel = (parseFloat(editForm.rincian_hotel.harga) || 0) * (nights > 0 ? nights : 1);
       }
 
@@ -1224,7 +1234,11 @@ function UniversalView({ userRole }: { userRole: string }) {
                         <div>
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                 <h4 className="font-semibold text-slate-700">Transportasi</h4>
-                                {isEditMode && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditForm({...editForm, rincian_transportasi: [...(editForm.rincian_transportasi||[]), { kota_asal: "", kota_tujuan: "", jenis_transportasi: "", tipe_perjalanan: "Keberangkatan", jam_berangkat: "", harga: 0 }]})}>Tambah Rute</Button>}
+                                {isEditMode && (editForm?.rincian_transportasi?.length || 0) < 2 && (
+                                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditForm({...editForm, rincian_transportasi: [...(editForm.rincian_transportasi||[]), { kota_asal: "", kota_tujuan: "", jenis_transportasi: "", tipe_perjalanan: "Keberangkatan", jam_berangkat: "", harga: 0 }]})}>
+                                    Tambah Rute
+                                  </Button>
+                                )}
                             </div>
                             
                             {isEditMode ? (
@@ -1260,7 +1274,11 @@ function UniversalView({ userRole }: { userRole: string }) {
                         <div>
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
                                 <h4 className="font-semibold text-slate-700">Estimasi Biaya Tambahan</h4>
-                                {isEditMode && <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditForm({...editForm, rincian_tambahan: [...(editForm.rincian_tambahan||[]), { kategori: "Lainnya", keterangan: "", kuantitas: 1, harga: 0 }]})}>Tambah Biaya</Button>}
+                                {isEditMode && (
+                                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setEditForm({...editForm, rincian_tambahan: [...(editForm.rincian_tambahan||[]), { kategori: "Lainnya", keterangan: "", kuantitas: 1, harga: 0 }]})}>
+                                        Tambah Biaya
+                                    </Button>
+                                )}
                             </div>
 
                             <div className="space-y-3">

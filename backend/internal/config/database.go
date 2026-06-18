@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 	"golang-mmi/internal/model"
 	"log"
 	"os"
@@ -30,6 +31,17 @@ func InitDB() *gorm.DB {
 	if err != nil {
 		log.Fatalf("Gagal terhubung ke database: %v", err)
 	}
+
+	
+ 	pool, err := db.DB()
+    if err != nil {
+        log.Fatalf("Gagal mengambil database connection pool: %v", err)
+    }
+
+    pool.SetMaxOpenConns(5)
+    pool.SetMaxIdleConns(2)
+    pool.SetConnMaxLifetime(30 * time.Minute)
+
 
 	log.Println("Koneksi ke database PostgreSQL berhasil!")
 

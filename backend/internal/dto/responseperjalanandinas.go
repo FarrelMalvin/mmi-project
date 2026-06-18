@@ -50,6 +50,7 @@ type DetailPPDResponse struct {
 }
 
 type RincianTambahanResponse struct {
+	ID         uint   `json:"id"`
 	Harga      int64  `json:"harga"`
 	Kuantitas  int    `json:"kuantitas"`
 	Keterangan string `json:"keterangan"`
@@ -58,6 +59,7 @@ type RincianTambahanResponse struct {
 
 type RincianTransportResponse struct {
 	TipePerjalanan    string    `json:"tipe_perjalanan"`
+	ID                uint      `json:"id"`
 	KotaAsal          string    `json:"kota_asal"`
 	KotaTujuan        string    `json:"kota_tujuan"`
 	JenisTransportasi string    `json:"jenis_transportasi"`
@@ -68,8 +70,12 @@ type RincianTransportResponse struct {
 }
 
 type RincianHotelResponse struct {
-	NamaHotel     string `json:"nama_hotel"`
-	TotalHarga    int64  `json:"total_harga"`
+	ID        uint   `json:"id"`
+	NamaHotel string `json:"nama_hotel"`
+	CheckIn   time.Time `json:"check_in"`
+	CheckOut  time.Time `json:"check_out"`
+	HargaPerMalam int64  `json:"harga_per_malam"`
+	HargaTotal    int64  `json:"harga_total"`
 }
 
 type DokumenTerdaftarResponse struct {
@@ -80,10 +86,10 @@ type DokumenTerdaftarResponse struct {
 }
 
 type RiwayatPersetujuanResponse struct {
-	Nama     string `json:"nama"`
-	Jabatan  string `json:"jabatan"`
-	Tindakan string `json:"tindakan"`
-	Catatan  string `json:"catatan"`
+	Nama           string    `json:"nama"`
+	Jabatan        string    `json:"jabatan"`
+	Tindakan       string    `json:"tindakan"`
+	Catatan        string    `json:"catatan"`
 	WaktuDisetujui time.Time `json:"waktu_disetujui"`
 }
 
@@ -119,11 +125,13 @@ type PPDDataToPDF struct {
 	CheckOut                       string
 	HargaHotel                     string
 	AsalKeberangkatan              string
+	HargaTransportasiKeberangkatan string
 	TujuanKeberangkatan            string
 	JamBerangkatKeberangkatan      string
 	JenisTransportasiKeberangkatan string
 	NomorKendaraanKeberangkatan    string
 	AsalKedatangan                 string
+	HargaTransportasiKedatangan    string
 	TujuanKedatangan               string
 	JenisTransportasiKedatangan    string
 	NomorKendaraanKedatangan       string

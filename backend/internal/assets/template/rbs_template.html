@@ -142,18 +142,18 @@
             <div class="sig-box">
                 <div>Dibuat oleh,</div>
                 <div class="sig-space">
-                    {{ if .TtdHRGA }} <img src="data:image/png;base64,{{ .TtdHRGA }}" style="max-height: 50px;"> {{ end }}
+                    {{ if .TtdPengaju }} <img src="data:image/png;base64,{{ .TtdPengaju }}" style="max-height: 50px;"> {{ end }}
                 </div>
                 <div class="line"></div>
-                <div>{{.Data.NamaHRGA}}</div>
+                <div>{{.Data.NamaPengaju}}</div>
             </div>
             <div class="sig-box">
                 <div>Diketahui oleh,</div>
                 <div class="sig-space">
-                   {{ if .TtdAtasan }} <img src="data:image/png;base64,{{ .TtdAtasan }}" style="max-height: 50px;"> {{ end }}
+                   {{ if .TtdDiketahui }} <img src="data:image/png;base64,{{ .TtdDiketahui }}" style="max-height: 50px;"> {{ end }}
                 </div>
                 <div class="line"></div>
-                <div>{{.Data.NamaAtasan}}</div>
+                <div>{{.Data.NamaDiketahui}}</div>
             </div>
             <div class="sig-box">
                 <div>Diverifikasi oleh,</div>

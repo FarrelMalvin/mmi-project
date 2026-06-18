@@ -11,6 +11,7 @@ type CreateRBSRequest struct {
 	PeriodeBerangkat  time.Time `json:"periode_berangkat" validate:"required"`
 	NomorBonSementara string    `json:"nomor_bon_sementara" validate:"required"`
 	PeriodeKembali    time.Time `json:"periode_kembali" validate:"required"`
+	BuktiTransferField *string   `json:"bukti_transfer_field"`
 	UrlBuktiTransfer  *string   `json:"url_bukti_transfer"`
 
 	Items []RBSItemRequest `json:"items"`
@@ -20,13 +21,14 @@ type CreateRBSRequest struct {
 }
 
 type RBSItemRequest struct {
-	Uraian    string `json:"uraian"`
-	Tanggal   string `json:"tanggal"`
-	Kuantitas int    `json:"qty"`
-	HargaUnit int64  `json:"harga_unit"`
-	Kategori  string `json:"kategori"`
-	Total     int64  `json:"total"`
-	UrlStruk  string `json:"url_struk"`
+	Uraian     string    `json:"uraian"`
+	Tanggal    time.Time `json:"tanggal"`
+	Kuantitas  int       `json:"kuantitas"`
+	HargaUnit  int64     `json:"harga_unit"`
+	Kategori   string    `json:"kategori"`
+	Total      int64     `json:"total"`
+	StrukField string    `json:"struk_field"`
+	UrlStruk   string    `json:"url_struk"`
 }
 
 type ApproveRBSRequest struct {
@@ -44,10 +46,14 @@ type DeclineRBSRequest struct {
 }
 
 type RBSListRequest struct {
-    UserID  uint   `json:"-"`
-    Jabatan string `json:"-"`
-    Page    int    `query:"page"`  
-    Limit   int    `query:"limit"` 
-    Month   int    `query:"month"` 
-    Year   int    `query:"year"` 
+	UserID  uint   `json:"-"`
+	Jabatan string `json:"-"`
+	Page    int    `query:"page"`
+	Limit   int    `query:"limit"`
+	Month   int    `query:"month"`
+	Year    int    `query:"year"`
+}
+
+type RBSUpdateRequest struct {
+	RincianTambahan []RincianRealisasi `json:"rincian_tambahan"`
 }

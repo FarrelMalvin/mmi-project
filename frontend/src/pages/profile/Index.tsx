@@ -4,10 +4,11 @@ import { api } from "../../lib/api";
 import { Button } from "../../components/common/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/common/Card";
 import { Label } from "../../components/common/Label";
+import { Input } from "../../components/common/Input";
 import { Separator } from "../../components/common/Separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../../components/common/Dialog";
 import { toast } from "sonner";
-import { User, Briefcase, Building2, MapPin, Edit3, Check, X, Upload, Crop } from "lucide-react";
+import { User, Briefcase, Building2, MapPin, Edit3, Check, X, Upload, Crop, Lock, Eye, EyeOff } from "lucide-react"; // Tambahkan Eye & EyeOff
 import Cropper from "react-easy-crop";
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "";
@@ -55,10 +56,10 @@ export default function ProfilePage() {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // State untuk Dialog & Crop
+  // State untuk Dialog & Crop Signature
   const [showSignatureDialog, setShowSignatureDialog] = useState(false);
-  const [imageSrc, setImageSrc] = useState<string>(""); // Gambar asli sebelum di-crop
-  const [finalSignatureBase64, setFinalSignatureBase64] = useState<string>(""); // Hasil akhir 400x150
+  const [imageSrc, setImageSrc] = useState<string>(""); 
+  const [finalSignatureBase64, setFinalSignatureBase64] = useState<string>(""); 
   
   // State untuk kontrol react-easy-crop
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -68,6 +69,18 @@ export default function ProfilePage() {
   
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // State untuk Ubah Password
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [oldPassword, setOldPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  // State untuk visibilitas (mata) password
+  const [showOldPassword, setShowOldPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -95,7 +108,6 @@ export default function ProfilePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // VALIDASI: Hanya terima PNG
     if (file.type !== "image/png") {
       toast.error("Format file harus PNG (Transparan/Solid)");
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -111,14 +123,15 @@ export default function ProfilePage() {
     const reader = new FileReader();
     reader.onloadend = () => {
       setImageSrc(reader.result as string);
-      setIsCropping(true); // Buka mode potong
+      setIsCropping(true); 
       setFinalSignatureBase64(""); 
     };
     reader.readAsDataURL(file);
     
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
-  const onCropComplete = useCallback((_:any, croppedAreaPixels: any) => {
+
+  const onCropComplete = useCallback((_: any, croppedAreaPixels: any) => {
     setCroppedAreaPixels(croppedAreaPixels);
   }, []);
 
@@ -142,14 +155,11 @@ export default function ProfilePage() {
     try {
       const fetchResponse = await fetch(finalSignatureBase64);
       const blob = await fetchResponse.blob();
-      
       const file = new File([blob], "signature_cropped.png", { type: "image/png" });
-
       
       const formData = new FormData();
       formData.append("signature_file", file);
 
-      // 4. Kirim ke backend menggunakan multipart/form-data
       await api.post("/user/signature", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
@@ -176,11 +186,52 @@ export default function ProfilePage() {
     setZoom(1);
   };
 
+  const resetPasswordState = () => {
+    setShowPasswordDialog(false);
+    setOldPassword("");
+    setNewPassword("");
+    setConfirmPassword("");
+    // Reset juga toggle mata saat dialog ditutup
+    setShowOldPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
   const getInitials = (name: string) => {
     if (!name) return "?";
     const parts = name.split(" ");
     if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
     return name.substring(0, 2).toUpperCase();
+  };
+
+  // Handler Ubah Password
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (newPassword !== confirmPassword) {
+      toast.error("Konfirmasi password tidak cocok");
+      return;
+    }
+    
+    if (newPassword.length < 6) {
+      toast.error("Password baru minimal 6 karakter");
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await api.patch("/auth/change-password", {
+        old_password: oldPassword,
+        new_password: newPassword,
+      });
+
+      toast.success("Password berhasil diubah");
+      resetPasswordState();
+    } catch (err: any) {
+      toast.error(err.response?.data?.message || "Gagal mengubah password");
+    } finally {
+      setIsChangingPassword(false);
+    }
   };
 
   if (loading) return <div className="p-8 text-center text-slate-400">Memuat profil...</div>;
@@ -197,7 +248,7 @@ export default function ProfilePage() {
 
       <div className="grid gap-6 md:grid-cols-3">
         {/* Kolom Kiri - Avatar & Jabatan */}
-        <div className="md:col-span-1">
+        <div className="md:col-span-1 space-y-6">
           <Card className="border-slate-100 shadow-sm rounded-xl overflow-hidden">
             <CardContent className="p-6">
               <div className="flex flex-col items-center">
@@ -229,7 +280,7 @@ export default function ProfilePage() {
           </Card>
         </div>
 
-        {/* Kolom Kanan - Data Personal & Tanda Tangan */}
+        {/* Kolom Kanan - Data Personal, Tanda Tangan, & Keamanan */}
         <div className="md:col-span-2 space-y-6">
           <Card className="border-slate-100 shadow-sm rounded-xl">
             <CardHeader className="border-b border-slate-100 pb-4">
@@ -247,7 +298,7 @@ export default function ProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Seksion Tanda Tangan */}
+          {/* Section Tanda Tangan */}
           <Card className="border-slate-100 shadow-sm rounded-xl">
             <CardHeader className="border-b border-slate-100 py-4">
               <div className="flex items-center justify-between">
@@ -285,10 +336,121 @@ export default function ProfilePage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Section Keamanan Akun */}
+          <Card className="border-slate-100 shadow-sm rounded-xl">
+            <CardHeader className="border-b border-slate-100 py-4">
+              <CardTitle className="text-base font-semibold flex items-center gap-2">
+                <Lock className="h-4 w-4 text-slate-500" /> Keamanan Akun
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-medium text-slate-900">Password</p>
+                  <p className="text-xs text-slate-500 mt-1">Ganti password akun Anda.</p>
+                </div>
+                <Button variant="outline" size="sm" className="w-full sm:w-auto shrink-0" onClick={() => setShowPasswordDialog(true)}>
+                  Ubah Password
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
         </div>
       </div>
 
-      {/* Dialog Upload & Crop */}
+      {/* Dialog Ubah Password */}
+      <Dialog open={showPasswordDialog} onOpenChange={(open) => !open && resetPasswordState()}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ubah Password</DialogTitle>
+            <DialogDescription>Masukkan password lama dan password baru Anda di bawah ini.</DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleChangePassword} className="space-y-4 py-4">
+            
+            {/* Input Password Lama */}
+            <div className="space-y-2">
+              <Label htmlFor="old_password">Password Lama</Label>
+              <div className="relative">
+                <Input
+                  id="old_password"
+                  type={showOldPassword ? "text" : "password"}
+                  placeholder="Masukkan password saat ini"
+                  value={oldPassword}
+                  onChange={(e) => setOldPassword(e.target.value)}
+                  required
+                  className="pr-10" // Beri padding kanan agar text tidak tertutup icon
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                  onClick={() => setShowOldPassword(!showOldPassword)}
+                >
+                  {showOldPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Input Password Baru */}
+            <div className="space-y-2">
+              <Label htmlFor="new_password">Password Baru</Label>
+              <div className="relative">
+                <Input
+                  id="new_password"
+                  type={showNewPassword ? "text" : "password"}
+                  placeholder="Minimal 6 karakter"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                >
+                  {showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Input Konfirmasi Password */}
+            <div className="space-y-2">
+              <Label htmlFor="confirm_password">Konfirmasi Password Baru</Label>
+              <div className="relative">
+                <Input
+                  id="confirm_password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Ulangi password baru"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600 focus:outline-none"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-4">
+              <Button type="button" variant="outline" onClick={resetPasswordState} disabled={isChangingPassword}>
+                Batal
+              </Button>
+              <Button type="submit" className="bg-slate-900 hover:bg-slate-800 text-white" disabled={isChangingPassword || !oldPassword || !newPassword || !confirmPassword}>
+                {isChangingPassword ? "Menyimpan..." : "Simpan"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog Upload & Crop Signature */}
       <Dialog open={showSignatureDialog} onOpenChange={(open) => !open && resetSignatureState()}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
@@ -297,14 +459,13 @@ export default function ProfilePage() {
           </DialogHeader>
 
           {isCropping ? (
-            // Tampilan Crop (Pemotongan)
             <div className="space-y-4 py-2">
               <div className="relative h-64 w-full bg-slate-900 rounded-lg overflow-hidden">
                 <Cropper
                   image={imageSrc}
                   crop={crop}
                   zoom={zoom}
-                  aspect={400 / 150} // Kunci rasio wajib 400x150
+                  aspect={400 / 150} 
                   onCropChange={setCrop}
                   onZoomChange={setZoom}
                   onCropComplete={onCropComplete}
@@ -318,7 +479,6 @@ export default function ProfilePage() {
               </div>
             </div>
           ) : (
-            // Tampilan Pilihan File / Preview Hasil Crop
             <div className="space-y-4 py-4">
               <div
                 className="border-2 border-dashed border-slate-300 rounded-lg p-6 text-center transition cursor-pointer hover:border-slate-400 bg-slate-50"

@@ -1,0 +1,11 @@
+.git
+tmp
+dist
+build
+*.log
+
+.env
+.env.staging
+.env.production
+
+node_modules

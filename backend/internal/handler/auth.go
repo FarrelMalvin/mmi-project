@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"log"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v5"
@@ -12,6 +13,7 @@ import (
 	"golang-mmi/internal/config"
 	"golang-mmi/internal/dto"
 	"golang-mmi/internal/service"
+	"golang-mmi/internal/middleware"
 )
 
 type AuthHandler struct {
@@ -196,4 +198,72 @@ func (h *AuthHandler) Logout(c *echo.Context) error {
 	})
 
 	return c.NoContent(http.StatusNoContent)
+}
+
+func (h *AuthHandler) ChangePassword(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req dto.ChangePasswordRequest
+	
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format request tidak valid",
+		})
+	}
+
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code:    http.StatusUnauthorized,
+			Status:  "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+	
+	req.UserId = claims.UserID
+
+	err := h.authService.ChangePassword(ctx, req)
+	if err != nil {
+		log.Printf("ChangePassword error: %v", err)
+		if errors.Is(err, service.ErrUserNotFound) {
+			return c.JSON(http.StatusNotFound, dto.ErrorResponse{
+				Code:    http.StatusNotFound,
+				Status:  "Not Found",
+				Message: "User tidak ditemukan",
+			})
+		}
+		if errors.Is(err, service.ErrInvalidOldPassword) {
+			return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+				Code:    http.StatusBadRequest,
+				Status:  "Bad Request",
+				Message: "Password lama salah",
+			})
+		}
+		if errors.Is(err, service.ErrPasswordTidakBolehKosong) {
+			return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+				Code:    http.StatusBadRequest,
+				Status:  "Bad Request",
+				Message: "Password tidak boleh kosong",
+			})
+		}
+		if errors.Is(err, service.ErrPasswordLamaBaruSama) {
+			return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+				Code:    http.StatusBadRequest,
+				Status:  "Bad Request",
+				Message: "Password baru tidak boleh sama dengan password lama",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Terjadi kesalahan pada server",
+		})
+	}
+
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "OK",
+		Message: "Password berhasil diubah",
+	})
 }

@@ -2,15 +2,14 @@ package repository
 
 import (
 	"context"
-	"errors"
-
-	"golang-mmi/internal/model"
 
 	"gorm.io/gorm"
+
+	"golang-mmi/internal/model"
 )
 
 type PerjalananDinasRepository interface {
-	CreatePengajuanPerjalanaDinas(ctx context.Context, perjalananDinas *model.RequestPPD) error
+	CreatePengajuanPerjalananDinas(ctx context.Context, perjalananDinas *model.RequestPPD, dokumen *model.Dokumen) error
 	GetListRiwayatPerjalananDinas(ctx context.Context, page, limit int) ([]model.PPDListView, int64, error)
 	GetListRiwayatPerjalananDinasByUserID(ctx context.Context, userID uint, page, limit int) ([]model.PPDListView, int64, error)
 	GetDetailPerjalananDinas(ctx context.Context, ppdid uint) (model.RequestPPD, error)
@@ -23,21 +22,29 @@ type PerjalananDinasRepository interface {
 	GetItemsByPPDID(ctx context.Context, ppdID uint, userid uint) ([]model.PPDItemView, error)
 	GetTotalEstimasi(ctx context.Context, ppdid uint) (int64, error)
 	GetUserIDByPPDID(ctx context.Context, ppdID uint) (uint, error)
-	GetNomorBS(ctx context.Context, ppdID uint) (string, error) 
+	GetNomorBS(ctx context.Context, ppdID uint) (string, error)
 	UpdatePengajuanPerjalananDinas(ctx context.Context, data model.RequestPPD) error
 }
 
 type ApprovePerjalananDinasparams struct {
-	RequestPPDID uint
-	NextStatus   string
-	NewDokumen   []model.Dokumen
-	Riwayat      *model.RiwayatApproval
+	RequestPPDID  uint
+	NextStatus    string
+	CurrentStatus string
+	NewDokumen    []model.Dokumen
+	Riwayat       *model.RiwayatApproval
 }
 
 type DeclinePerjalananDinasParams struct {
-	RequestPPDID uint
-	NextStatus   string
-	Riwayat      *model.RiwayatApproval
+	RequestPPDID  uint
+	NextStatus    string
+	CurrentStatus string
+	Riwayat       *model.RiwayatApproval
+}
+
+type Pagination struct {
+	Page   int
+	Limit  int
+	Offset int
 }
 
 type PerjalananDinas struct {
@@ -50,16 +57,27 @@ func NewPerjalananDinasRepository(db *gorm.DB) PerjalananDinasRepository {
 	}
 }
 
-func (r *PerjalananDinas) CreatePengajuanPerjalanaDinas(ctx context.Context, perjalananDinas *model.RequestPPD) error {
-	return r.db.WithContext(ctx).Create(perjalananDinas).Error
+func (r *PerjalananDinas) CreatePengajuanPerjalananDinas(ctx context.Context, perjalananDinas *model.RequestPPD, dokumen *model.Dokumen) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(perjalananDinas).Error; err != nil {
+			return err
+		}
+
+		if dokumen == nil {
+			return nil
+		}
+		dokumen.DocRefID = perjalananDinas.Id	
+		return tx.Create(dokumen).Error
+
+	})
 }
+
 func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, page int, limit int) ([]model.PPDListView, int64, error) {
 	var listData []model.PPDListView
 	var totalData int64
 
-	if page < 1 { page = 1 }
-	if limit < 1 { limit = 10 }
-	offset := (page - 1) * limit
+	pagination := normalizePagination(page, limit)
+	offset := pagination.Offset
 
 	if err := r.db.WithContext(ctx).Table("request_ppds").Count(&totalData).Error; err != nil {
 		return nil, 0, err
@@ -83,20 +101,20 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinas(ctx context.Context, pag
 		Order("request_ppds.periode_berangkat DESC").
 		Limit(limit).
 		Offset(offset).
-		Scan(&listData).Error 
+		Scan(&listData).Error
 
 	return listData, totalData, err
 }
 func (r *PerjalananDinas) GetStatusPerjalananDinas(ctx context.Context, ppdid uint) (string, error) {
 	var status string
-	err := r.db.Debug().WithContext(ctx).
+	err := r.db.WithContext(ctx).
 		Model(&model.RequestPPD{}).
 		Select("status").
 		Where("id = ?", ppdid).
-		Scan(&status).Error
+		First(&status).Error
 
-	if status == "" {
-		return "", errors.New("data tidak ditemukan atau status memang kosong")
+	if err != nil {
+		return "", err
 	}
 
 	return status, err
@@ -122,7 +140,7 @@ func (r *PerjalananDinas) ApprovePerjalananDinas(ctx context.Context, p ApproveP
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		if err := tx.Model(&model.RequestPPD{}).
-			Where("id = ?", p.RequestPPDID).
+			Where("id = ? AND status = ?", p.RequestPPDID, p.CurrentStatus).
 			Update("status", p.NextStatus).Error; err != nil {
 			return err
 		}
@@ -145,13 +163,8 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByUserID(ctx context.Cont
 	var listData []model.PPDListView
 	var totalData int64
 
-	if page < 1 {
-		page = 1
-	}
-	if limit < 1 {
-		limit = 10
-	}
-	offset := (page - 1) * limit
+	Pagination := normalizePagination(page, limit)
+	offset := Pagination.Offset
 	query := r.db.WithContext(ctx).
 		Table("request_ppds").
 		Select(`
@@ -224,7 +237,7 @@ func (r *PerjalananDinas) GetListRiwayatPerjalananDinasByAtasan(ctx context.Cont
 func (r *PerjalananDinas) GetListPendingPerjalananDinas(ctx context.Context, jabatan string, userID uint, page int, limit int) ([]model.PPDListView, int64, error) {
 	var listData []model.PPDListView
 	var totalData int64
-	
+
 	if page < 1 {
 		page = 1
 	}
@@ -296,7 +309,7 @@ func (r *PerjalananDinas) DeclinePerjalananDinas(ctx context.Context, p DeclineP
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		if err := tx.Model(&model.RequestPPD{}).
-			Where("id = ?", p.RequestPPDID).
+			Where("id = ? AND status = ?", p.RequestPPDID, p.CurrentStatus).
 			Update("status", p.NextStatus).Error; err != nil {
 			return err
 		}
@@ -317,11 +330,11 @@ func (r *PerjalananDinas) GetItemsByPPDID(ctx context.Context, ppdID uint, useri
 	query := `
    	SELECT 
         h.id, 
-        'Hotel: ' || h.nama_hotel AS uraian, 
-        1 AS kuantitas,          
-        h.harga AS harga_unit, 
-		h.kategori AS kategori,
-        h.harga AS total    
+        'Akomodasi: ' || h.nama_hotel AS uraian, 
+        1 AS kuantitas,          	
+        h.harga_total AS harga_unit, 
+		'Akomodasi' AS kategori,
+        h.harga_total AS total    
     FROM ppd_hotels h
     INNER JOIN request_ppds r ON h.request_ppd_id = r.id
     WHERE h.request_ppd_id = ? AND r.user_id = ?
@@ -330,7 +343,7 @@ func (r *PerjalananDinas) GetItemsByPPDID(ctx context.Context, ppdID uint, useri
     
     SELECT 
         t.id, 
-        'Transport: ' || t.jenis_transportasi AS uraian, 
+        'Transportasi: ' || t.jenis_transportasi AS uraian, 
         1 AS kuantitas, 
         t.harga AS harga_unit, 
 		'Transportasi' AS kategori,
@@ -398,47 +411,88 @@ func (r *PerjalananDinas) GetNomorBS(ctx context.Context, ppdID uint) (string, e
 
 	return nomorBS, err
 }
+
 func (r *PerjalananDinas) UpdatePengajuanPerjalananDinas(ctx context.Context, data model.RequestPPD) error {
-	return r.db.Transaction(func(tx *gorm.DB) error {
-		err := tx.Model(&model.RequestPPD{Id: data.Id}).
-			Omit("RincianTambahan", "RincianTransportasi", "RincianHotel").
-			Updates(data).Error
-		if err != nil {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.RequestPPD{}).Where("id = ?", data.Id).Updates(map[string]interface{}{
+			"total_estimasi": data.TotalEstimasi,
+		}).Error; err != nil {
 			return err
 		}
 
-		tx.Where("request_ppd_id = ?", data.Id).Delete(&model.PPDRincianTambahan{})
-		if len(data.RincianTambahan) > 0 {
-			for i := range data.RincianTambahan {
-				data.RincianTambahan[i].Id = 0
-				data.RincianTambahan[i].RequestPPDID = data.Id
-			}
-			if err := tx.Create(&data.RincianTambahan).Error; err != nil {
-				return err
-			}
+		if err := r.UpdateRincianTambahan(tx, data.Id, &data.RincianTambahan); err != nil {
+			return err
 		}
 
-		tx.Where("request_ppd_id = ?", data.Id).Delete(&model.PPDTransportasi{})
-		if data.RincianTransportasi != nil && len(*data.RincianTransportasi) > 0 {
-			rt := *data.RincianTransportasi
-			for i := range rt {
-				rt[i].Id = 0
-				rt[i].RequestPPDID = data.Id
-			}
-			if err := tx.Create(&rt).Error; err != nil {
-				return err
-			}
+		if err := r.UpdateRincianTransportasi(tx, data.Id, data.RincianTransportasi); err != nil {
+			return err
 		}
 
-		tx.Where("request_ppd_id = ?", data.Id).Delete(&model.PPDHotel{})
-		if data.RincianHotel != nil && data.RincianHotel.NamaHotel != "" {
-			data.RincianHotel.Id = 0
-			data.RincianHotel.RequestPPDID = data.Id
-			if err := tx.Create(data.RincianHotel).Error; err != nil {
-				return err
-			}
+		if err := r.UpdateRincianHotel(tx, data.Id, data.RincianHotel); err != nil {
+			return err
 		}
 
 		return nil
 	})
+}
+
+func (r *PerjalananDinas) UpdateRincianTambahan(tx *gorm.DB, ppdid uint, items *[]model.PPDRincianTambahan) error {
+	for _, item := range *items {
+		if item.Id == 0 {
+			return nil
+		}
+		if err := tx.Model(&model.PPDRincianTambahan{}).Where("id = ? AND request_ppd_id = ?", item.Id, ppdid).Updates(map[string]interface{}{
+			"harga":     item.Harga,
+			"kuantitas": item.Kuantitas,
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *PerjalananDinas) UpdateRincianTransportasi(tx *gorm.DB, ppdid uint, items []model.PPDTransportasi) error {
+	for _, item := range items {
+		if item.Id == 0 {
+			return nil
+		}
+		if err := tx.Model(&model.PPDTransportasi{}).Where("id = ? AND request_ppd_id = ?", item.Id, ppdid).Updates(map[string]interface{}{
+			"harga": item.Harga,
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (r *PerjalananDinas) UpdateRincianHotel(tx *gorm.DB, ppdid uint, rincianHotel *model.PPDHotel) error {
+	if rincianHotel == nil || rincianHotel.Id == 0 {
+		return nil
+	}
+	return tx.Model(&model.PPDHotel{}).Where("id = ? AND request_ppd_id = ?", rincianHotel.Id, ppdid).Updates(map[string]interface{}{
+		"harga_per_malam": rincianHotel.HargaPerMalam,
+		"harga_total":     rincianHotel.HargaTotal,
+	}).Error
+}
+
+func normalizePagination(page, limit int) Pagination {
+	if page < 1 {
+		page = 1
+	}
+
+	if limit < 1 {
+		limit = 10
+	}
+
+	if limit > 100 {
+		limit = 100
+	}
+
+	return Pagination{
+		Page:   page,
+		Limit:  limit,
+		Offset: (page - 1) * limit,
+	}
 }

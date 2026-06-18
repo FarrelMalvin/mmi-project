@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 	"fmt"
 	"io"
 	"strconv"
@@ -76,19 +77,21 @@ var statusDownloadable = map[string]bool{
 type PerjalananDinasImpl struct {
 	repo         repository.PerjalananDinasRepository
 	servicedoc   DocumentService
+	userService  UserService
 	notifManager *utils.NotificationManager
 }
 
-func NewPerjalananDinasService(repo repository.PerjalananDinasRepository, servicedoc DocumentService, notifManager *utils.NotificationManager) *PerjalananDinasImpl {
+func NewPerjalananDinasService(repo repository.PerjalananDinasRepository, servicedoc DocumentService, userService UserService, notifManager *utils.NotificationManager) *PerjalananDinasImpl {
 	return &PerjalananDinasImpl{
 		repo:         repo,
 		servicedoc:   servicedoc,
+		userService:  userService,
 		notifManager: notifManager,
 	}
 }
 
 type ServicePPD interface {
-	CreatePengajuanPerjalanaDinas(ctx context.Context, req dto.CreatePPDRequest) error
+	CreatePengajuanPerjalananDinas(ctx context.Context, req dto.CreatePPDRequest) error
 	GetListPerjalananDinas(ctx context.Context, req dto.ListPPDRequest) ([]dto.ListPPDResponse, int64, error)
 	DeclinePerjalananDinas(ctx context.Context, req dto.DeclinePPDRequest) error
 	ApprovePerjalananDinas(ctx context.Context, req dto.ApprovePPDRequest) error
@@ -97,11 +100,11 @@ type ServicePPD interface {
 	GetItemsByPPDID(ctx context.Context, ppdID uint, userid uint) (dto.PPDItemDetailResponse, error)
 	FillPPDPDF(ctx context.Context, ppdID uint, userID uint, templatePath string, jabatan string, w io.Writer) error
 	FillBSPDF(ctx context.Context, ppdID uint, userID uint, templatePath string, w io.Writer) error
-	EditPerjalananDinas(ctx context.Context, ppdID uint, req dto.UpdatePPDRequest) error
+	EditPerjalananDinas(ctx context.Context, ppdID uint, jabatan string, req dto.UpdatePPDRequest) error
 }
 
-func (s *PerjalananDinasImpl) CreatePengajuanPerjalanaDinas(ctx context.Context, req dto.CreatePPDRequest) error {
-	var rincianBersih []model.PPDRincianTambahan
+func (s *PerjalananDinasImpl) CreatePengajuanPerjalananDinas(ctx context.Context, req dto.CreatePPDRequest) error {
+	var rincianBersih []dto.PPDRincianTambahan
 	for _, item := range req.RincianTambahan {
 		if !KategoriValid[item.Kategori] {
 			return ErrKategoriTidakValid
@@ -111,32 +114,29 @@ func (s *PerjalananDinasImpl) CreatePengajuanPerjalanaDinas(ctx context.Context,
 	req.RincianTambahan = rincianBersih
 
 	var autoApprovals []model.RiwayatApproval
-	var totalHitung int64
-
-	if req.RincianTransportasi != nil {
-		for i := range *req.RincianTransportasi {
-			(*req.RincianTransportasi)[i].Kategori = constant.KategoriTransportasi
-			totalHitung += (*req.RincianTransportasi)[i].Harga
-		}
-	}
-
-	if req.RincianHotel != nil && req.RincianHotel.NamaHotel != "" {
-		req.RincianHotel.Kategori = constant.KategoriAkomodasi
-		totalHitung += req.RincianHotel.Harga
-	}
-
-	for _, item := range req.RincianTambahan {
-		totalHitung += item.Harga * int64(item.Kuantitas)
-	}
-
 	var status string
 	var targetNotif string
 	switch req.Jabatan {
 	case constant.JabatanPegawai:
+		if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
+			if errors.Is(err, ErrTandaTanganBelumTersedia) {
+        		return ErrTandaTanganBelumTersedia
+			}
+			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
+    	}
+
 		status = constant.StatusMenungguAtasan
 		targetNotif = constant.JabatanAtasan
 
 	case constant.JabatanAtasan:
+		if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
+			if errors.Is(err, ErrTandaTanganBelumTersedia) {
+        		return ErrTandaTanganBelumTersedia
+			}
+			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
+    	}
+
+
 		status = constant.StatusMenungguHRGA
 		targetNotif = constant.JabatanHRGA
 		autoApprovals = append(autoApprovals, model.RiwayatApproval{
@@ -147,6 +147,13 @@ func (s *PerjalananDinasImpl) CreatePengajuanPerjalanaDinas(ctx context.Context,
 		})
 
 	case constant.JabatanHRGA:
+		if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
+			if errors.Is(err, ErrTandaTanganBelumTersedia) {
+        		return ErrTandaTanganBelumTersedia
+			}
+			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
+    	}
+
 		status = constant.StatusMenungguDirektur
 		targetNotif = constant.JabatanDirektur
 		autoApprovals = append(autoApprovals, model.RiwayatApproval{
@@ -167,34 +174,31 @@ func (s *PerjalananDinasImpl) CreatePengajuanPerjalanaDinas(ctx context.Context,
 		Keperluan:           req.Keperluan,
 		PeriodeKembali:      req.TanggalKembali,
 		UrlDokumen:          req.UrlDokumen,
-		RincianTambahan:     req.RincianTambahan,
-		RincianTransportasi: req.RincianTransportasi,
-		TotalEstimasi:       totalHitung,
+		RincianTambahan:     mappingRincianTambahan(req.RincianTambahan),
+		RincianTransportasi: mappingRincianTransportasi(req.RincianTransportasi),
+		RincianHotel:        mappingRincianHotel(req.RincianHotel),
+		TotalEstimasi:       calculateTotalPPD(req.RincianTambahan, req.RincianTransportasi, req.RincianHotel),
 		Status:              status,
 		RiwayatPersetujuan:  autoApprovals,
 	}
-
-	if err := s.repo.CreatePengajuanPerjalanaDinas(ctx, &newPPD); err != nil {
-		return fmt.Errorf("gagal membuat pengajuan perjalanan dinas: %w", err)
-	}
-
+	var newDokumen *model.Dokumen
 	if req.Jabatan == constant.JabatanHRGA {
 		nomorUmum, errGen := s.servicedoc.GenerateNomorDokumenGeneral(ctx, constant.KodeDeptHRD)
 		if errGen != nil {
 			return fmt.Errorf("gagal generate nomor dokumen: %w", errGen)
 		}
 
-		newDokumen := model.Dokumen{
-			DocRefID:     newPPD.Id,
+		newDokumen = &model.Dokumen{
 			DocRefType:   constant.DocRefTypePPD,
 			UserID:       req.UserID,
 			NomorDokumen: nomorUmum,
 			TipeDokumen:  constant.TipeDokumenPPD,
 		}
 
-		if err := s.servicedoc.SaveDokumen(ctx, &newDokumen); err != nil {
-			return fmt.Errorf("gagal menyimpan dokumen: %w", err)
-		}
+	}
+
+	if err := s.repo.CreatePengajuanPerjalananDinas(ctx, &newPPD, newDokumen); err != nil {
+		return fmt.Errorf("gagal membuat pengajuan perjalanan dinas: %w", err)
 	}
 
 	if targetNotif != "" {
@@ -258,13 +262,13 @@ func (s *PerjalananDinasImpl) DeclinePerjalananDinas(ctx context.Context, req dt
 		return err
 	}
 
-	OpsiStatus, exist := ProsesStatus[currentStatus]
+	opsiStatus, exist := ProsesStatus[currentStatus]
 
-	if !exist || len(OpsiStatus) < 2 {
+	if !exist || len(opsiStatus) < 2 {
 		return ErrStatusTidakValid
 	}
 
-	nextStatus := OpsiStatus[1]
+	nextStatus := opsiStatus[1]
 
 	riwayat := &model.RiwayatApproval{
 		DocRefID:   req.RequestPPDID,
@@ -276,9 +280,10 @@ func (s *PerjalananDinasImpl) DeclinePerjalananDinas(ctx context.Context, req dt
 	}
 
 	params := repository.DeclinePerjalananDinasParams{
-		RequestPPDID: req.RequestPPDID,
-		NextStatus:   nextStatus,
-		Riwayat:      riwayat,
+		RequestPPDID:  req.RequestPPDID,
+		NextStatus:    nextStatus,
+		CurrentStatus: currentStatus,
+		Riwayat:       riwayat,
 	}
 
 	go func() {
@@ -341,6 +346,7 @@ func (s *PerjalananDinasImpl) GetPerjalananDetail(ctx context.Context, ppdid uin
 
 	for _, item := range data.RincianTambahan {
 		resp.RincianTambahan = append(resp.RincianTambahan, dto.RincianTambahanResponse{
+			ID:         item.Id,
 			Harga:      item.Harga,
 			Kuantitas:  item.Kuantitas,
 			Keterangan: item.Keterangan,
@@ -349,16 +355,16 @@ func (s *PerjalananDinasImpl) GetPerjalananDetail(ctx context.Context, ppdid uin
 	}
 
 	if data.RincianTransportasi != nil {
-		for _, item := range *data.RincianTransportasi {
+		for _, item := range data.RincianTransportasi {
 			resp.RincianTransportasi = append(resp.RincianTransportasi, dto.RincianTransportResponse{
+				ID:                item.Id,
 				TipePerjalanan:    item.TipePerjalanan,
 				KotaAsal:          item.KotaAsal,
 				KotaTujuan:        item.KotaTujuan,
 				JenisTransportasi: item.JenisTransportasi,
 				NomorKendaraan:    item.NomorKendaraan,
 				Harga:             item.Harga,
-				Kategori:          item.Kategori,
-				JamBerangkat:      item.Jamberangkat,
+				JamBerangkat:      item.JamBerangkat,
 			})
 		}
 
@@ -366,8 +372,12 @@ func (s *PerjalananDinasImpl) GetPerjalananDetail(ctx context.Context, ppdid uin
 
 	if data.RincianHotel != nil {
 		resp.RincianHotel = &dto.RincianHotelResponse{
-			NamaHotel:  data.RincianHotel.NamaHotel,
-			TotalHarga: data.RincianHotel.Harga,
+			ID:        data.RincianHotel.Id,
+			NamaHotel: data.RincianHotel.NamaHotel,
+			CheckIn:   data.RincianHotel.CheckIn,
+			CheckOut:  data.RincianHotel.CheckOut,
+			HargaPerMalam: data.RincianHotel.HargaPerMalam,
+			HargaTotal:    data.RincianHotel.HargaTotal,
 		}
 	}
 
@@ -394,12 +404,19 @@ func (s *PerjalananDinasImpl) ApprovePerjalananDinas(ctx context.Context, req dt
 		return err
 	}
 
-	OpsiStatus, exist := ProsesStatus[currentStatus]
-	if !exist || len(OpsiStatus) == 0 {
+	if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
+		if errors.Is(err, ErrTandaTanganBelumTersedia) {
+        	return ErrTandaTanganBelumTersedia
+		}
+		return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
+    }
+
+	opsiStatus, exist := ProsesStatus[currentStatus]
+	if !exist || len(opsiStatus) == 0 {
 		return ErrStatusTidakValid
 	}
 
-	nextStatus := OpsiStatus[0]
+	nextStatus := opsiStatus[0]
 
 	pengajuID, err := s.repo.GetUserIDByPPDID(ctx, req.RequestPPDID)
 	if err != nil {
@@ -455,10 +472,11 @@ func (s *PerjalananDinasImpl) ApprovePerjalananDinas(ctx context.Context, req dt
 	}
 
 	params := repository.ApprovePerjalananDinasparams{
-		RequestPPDID: req.RequestPPDID,
-		NextStatus:   nextStatus,
-		NewDokumen:   newdokumen,
-		Riwayat:      riwayat,
+		RequestPPDID:  req.RequestPPDID,
+		NextStatus:    nextStatus,
+		CurrentStatus: currentStatus,
+		NewDokumen:    newdokumen,
+		Riwayat:       riwayat,
 	}
 
 	if err := s.repo.ApprovePerjalananDinas(ctx, params); err != nil {
@@ -563,6 +581,14 @@ func (s *PerjalananDinasImpl) GetDataPPDForPDF(ctx context.Context, ppdID uint, 
 		tanggalDisetujuiDirektur = utils.FormatTanggal(r.CreatedAt)
 	}
 
+	var pathTandaTanganPengaju string
+	var tanggalDiajukan string
+
+	if data.User.Jabatan == constant.JabatanPegawai {
+		pathTandaTanganPengaju = data.User.PathTandaTangan
+		tanggalDiajukan = utils.FormatTanggal(data.CreatedAt)
+	}
+
 	pdf := dto.PPDDataToPDF{
 		NomorDokumen:             nomorDokumen,
 		TanggalTerbit:            tanggalTerbit,
@@ -573,27 +599,27 @@ func (s *PerjalananDinasImpl) GetDataPPDForPDF(ctx context.Context, ppdID uint, 
 		Tujuan:                   data.Tujuan,
 		Keperluan:                data.Keperluan,
 		Periode:                  fmt.Sprintf("%s - %s", utils.FormatTanggal(data.PeriodeBerangkat), utils.FormatTanggal(data.PeriodeKembali)),
-		PathTandaTanganPengaju:   data.User.PathTandaTangan,
+		PathTandaTanganPengaju:   pathTandaTanganPengaju,
 		PathTandaTanganAtasan:    pathAtasan,
 		PathTandaTanganHRGA:      pathHRGA,
 		PathTandaTanganDirektur:  pathDirektur,
 		TanggalDisetujuiAtasan:   tanggalDisetujuiAtasan,
 		TanggalDisetujuiHRGA:     tanggalDisetujuiHRGA,
 		TanggalDisetujuiDirektur: tanggalDisetujuiDirektur,
-		TanggalDiajukan:          utils.FormatTanggal(data.CreatedAt),
+		TanggalDiajukan:          tanggalDiajukan,
 	}
 
 	if data.RincianHotel != nil && data.RincianHotel.NamaHotel != "" {
 		pdf.NamaHotel = data.RincianHotel.NamaHotel
 		pdf.CheckIn = utils.FormatTanggal(data.RincianHotel.CheckIn)
 		pdf.CheckOut = utils.FormatTanggal(data.RincianHotel.CheckOut)
-		pdf.HargaHotel = utils.FormatRupiah(data.RincianHotel.Harga)
+		pdf.HargaHotel = utils.FormatRupiah(data.RincianHotel.HargaTotal)
 		pdf.PeriodeHotel = pdf.Periode
 		pdf.TujuanHotel = data.Tujuan
 	}
 
 	if data.RincianTransportasi != nil {
-		for _, t := range *data.RincianTransportasi {
+		for _, t := range data.RincianTransportasi {
 			noKendaraan := "-"
 			if t.NomorKendaraan != nil {
 				noKendaraan = *t.NomorKendaraan
@@ -604,17 +630,19 @@ func (s *PerjalananDinasImpl) GetDataPPDForPDF(ctx context.Context, ppdID uint, 
 				pdf.TujuanKeberangkatan = t.KotaTujuan
 				pdf.JenisTransportasiKeberangkatan = t.JenisTransportasi
 				pdf.NomorKendaraanKeberangkatan = noKendaraan
-				pdf.JamBerangkatKeberangkatan = t.Jamberangkat.Format("15:04")
+				pdf.JamBerangkatKeberangkatan = t.JamBerangkat.Format("15:04")
+				pdf.HargaTransportasiKeberangkatan = utils.FormatRupiah(t.Harga)
 			} else if t.TipePerjalanan == "Kedatangan" {
 				pdf.AsalKedatangan = t.KotaAsal
 				pdf.TujuanKedatangan = t.KotaTujuan
 				pdf.JenisTransportasiKedatangan = t.JenisTransportasi
 				pdf.NomorKendaraanKedatangan = noKendaraan
-				pdf.JamBerangkatKedatangan = t.Jamberangkat.Format("15:04")
+				pdf.JamBerangkatKedatangan = t.JamBerangkat.Format("15:04")
+				pdf.HargaTransportasiKedatangan = utils.FormatRupiah(t.Harga)
 			}
 		}
 
-	}
+	}	
 
 	for _, r := range data.RincianTambahan {
 		total := r.Harga * int64(r.Kuantitas)
@@ -661,9 +689,9 @@ func (s *PerjalananDinasImpl) FillPPDPDF(ctx context.Context, ppdID uint, userID
 	for i := 1; i <= 8; i++ {
 		formData[fmt.Sprintf("checkbox_%d", i)] = ""
 	}
-	formData["nomor_kendaraan_keberangkatan"] = ""
+	formData["no_kendaraan_keberangkatan"] = ""
 	formData["jenis_transportasi_lain_keberangkatan"] = ""
-	formData["nomor_kendaraan_kedatangan"] = ""
+	formData["no_kendaraan_kedatangan"] = ""
 	formData["jenis_transportasi_lain_kedatangan"] = ""
 
 	transBerangkat := pdfData.JenisTransportasiKeberangkatan
@@ -671,9 +699,13 @@ func (s *PerjalananDinasImpl) FillPPDPDF(ctx context.Context, ppdID uint, userID
 		formData["checkbox_1"] = "X"
 	} else if transBerangkat == constant.TransportasiKeretaApi {
 		formData["checkbox_2"] = "X"
-	} else if transBerangkat == constant.TransportasiMobilDinas {
+	} else if transBerangkat == constant.TransportasiKendaraanDinas {
 		formData["checkbox_4"] = "X"
-		formData["nomor_kendaraan_keberangkatan"] = pdfData.NomorKendaraanKeberangkatan
+		formData["no_kendaraan_keberangkatan"] = pdfData.NomorKendaraanKeberangkatan
+	} else if transBerangkat == constant.TransportasiKendaraanPribadi {
+		formData["checkbox_3"] = "X"
+		formData["jenis_transportasi_lain_keberangkatan"] = transBerangkat
+		formData["no_kendaraan_keberangkatan"] = pdfData.NomorKendaraanKeberangkatan
 	} else if transBerangkat != "" {
 		formData["checkbox_3"] = "X"
 		formData["jenis_transportasi_lain_keberangkatan"] = transBerangkat
@@ -684,9 +716,13 @@ func (s *PerjalananDinasImpl) FillPPDPDF(ctx context.Context, ppdID uint, userID
 		formData["checkbox_5"] = "X"
 	} else if transDatang == constant.TransportasiKeretaApi {
 		formData["checkbox_6"] = "X"
-	} else if transDatang == constant.TransportasiMobilDinas {
+	} else if transDatang == constant.TransportasiKendaraanDinas {
 		formData["checkbox_8"] = "X"
-		formData["nomor_kendaraan_kedatangan"] = pdfData.NomorKendaraanKedatangan
+		formData["no_kendaraan_kedatangan"] = pdfData.NomorKendaraanKedatangan
+	} else if transDatang == constant.TransportasiKendaraanPribadi {
+		formData["checkbox_7"] = "X"
+		formData["jenis_transportasi_lain_kedatangan"] = transDatang
+		formData["no_kendaraan_kedatangan"] = pdfData.NomorKendaraanKedatangan
 	} else if transDatang != "" {
 		formData["checkbox_7"] = "X"
 		formData["jenis_transportasi_lain_kedatangan"] = transDatang
@@ -694,39 +730,70 @@ func (s *PerjalananDinasImpl) FillPPDPDF(ctx context.Context, ppdID uint, userID
 
 	var totalSeluruh int64
 	var totalLainLain int64
-	var hasLainLain bool
 
-	for i, rincian := range pdfData.Rincian {
-		formData[fmt.Sprintf("keterangan_%d", i+1)] = rincian.Kategori
-		formData[fmt.Sprintf("harga_%d", i+1)] = rincian.Harga
-		formData[fmt.Sprintf("total%d", i+1)] = rincian.Total
+	var itemBiaya []pdfBiayaItem
 
-		cleanTotal := strings.ReplaceAll(rincian.Total, "Rp", "")
-		cleanTotal = strings.ReplaceAll(cleanTotal, ".", "")
-		cleanTotal = strings.ReplaceAll(cleanTotal, " ", "")
-		cleanTotal = strings.ReplaceAll(cleanTotal, ",", "")
+	if pdfData.JenisTransportasiKeberangkatan != ""  && pdfData.HargaTransportasiKeberangkatan != "" {
+		itemBiaya = append(itemBiaya, pdfBiayaItem{
+			Keterangan: "Transportasi Keberangkatan",
+			Harga:      parseNominalToInt64(pdfData.HargaTransportasiKeberangkatan),
+			Total:      parseNominalToInt64(pdfData.HargaTransportasiKeberangkatan),
+			TotalRow:   parseNominalToInt64(pdfData.HargaTransportasiKeberangkatan),
+		})
+	}
 
-		totalInt, _ := strconv.ParseInt(cleanTotal, 10, 64)
-		totalSeluruh += totalInt
+	if pdfData.JenisTransportasiKedatangan != "" && pdfData.HargaTransportasiKedatangan != "" {
+		itemBiaya = append(itemBiaya, pdfBiayaItem{
+			Keterangan: "Transportasi Kedatangan",
+			Harga:      parseNominalToInt64(pdfData.HargaTransportasiKedatangan),
+			Total:      parseNominalToInt64(pdfData.HargaTransportasiKedatangan),
+			TotalRow:   parseNominalToInt64(pdfData.HargaTransportasiKedatangan),
+		})
+	}
+
+	if pdfData.HargaHotel != ""  && pdfData.NamaHotel != "" {
+		itemBiaya = append(itemBiaya, pdfBiayaItem{
+			Keterangan: "Hotel",
+			Harga:      parseNominalToInt64(pdfData.HargaHotel),
+			Total:      parseNominalToInt64(pdfData.HargaHotel),
+			TotalRow:   parseNominalToInt64(pdfData.HargaHotel),
+		})
+	}
+
+	for _, rincian := range pdfData.Rincian {
+		itemBiaya = append(itemBiaya, pdfBiayaItem{
+			Keterangan: rincian.Kategori,
+			Harga:      parseNominalToInt64(rincian.Harga),
+			Total:      parseNominalToInt64(rincian.Total),
+			TotalRow:   parseNominalToInt64(rincian.Total),
+		})
+	}
+
+	
+	for i, item := range itemBiaya {
+		totalSeluruh += item.TotalRow
 
 		if i < 9 {
-			formData[fmt.Sprintf("keterangan_%d", i+1)] = rincian.Kategori
-			formData[fmt.Sprintf("harga_%d", i+1)] = rincian.Harga
+			row := i + 1
 
-			cleanVal := strings.ReplaceAll(rincian.Total, "Rp", "")
-			formData[fmt.Sprintf("total%d", i+1)] = strings.TrimSpace(cleanVal)
-		} else {
-			hasLainLain = true
-			totalLainLain += totalInt
+			formData[fmt.Sprintf("keterangan_%d", row)] = item.Keterangan
+			formData[fmt.Sprintf("harga_%d", row)] = utils.FormatNominal(item.Harga)
+			formData[fmt.Sprintf("total%d", row)] = utils.FormatNominal(item.Total)
+
+			continue
 		}
 
-		if hasLainLain {
-			formData["keterangan_10"] = "Lain-lain"
-			formData["harga_10"] = utils.FormatNominal(totalLainLain)
-			formData["total10"] = utils.FormatNominal(totalLainLain)
-		}
+		totalLainLain += item.TotalRow
 	}
-	formData["text_52irsw"] = utils.FormatNominal(totalSeluruh)
+
+		
+	if totalLainLain > 0 {
+		formData["keterangan_10"] = "Lain-lain"
+		formData["harga_10"] = utils.FormatNominal(totalLainLain)
+		formData["total10"] = utils.FormatNominal(totalLainLain)
+	}
+
+	formData["total_biaya"] = utils.FormatNominal(totalSeluruh)
 
 	if len(formData) == 0 {
 		return fmt.Errorf("formData kosong, tidak ada data untuk diisi ke PDF")
@@ -889,18 +956,18 @@ func (s *PerjalananDinasImpl) FillBSPDF(ctx context.Context, ppdID uint, userID 
 func validateJabatanDanStatus(jabatan, currentStatus string) error {
 	expected, ok := statusYangDiharapkan[jabatan]
 	if !ok {
-		return fmt.Errorf("jabatan tidak dikenali: %s", jabatan)
+		return ErrJabatanTidakValid
 	}
 	if currentStatus != expected {
-		return errors.New("tidak dapat memproses perjalanan dinas dengan status saat ini")
+		return ErrStatusTidakValid
 	}
 	return nil
 }
 
 func findDokumenByTipe(dokumens []model.Dokumen, tipe string) *model.Dokumen {
-	for _, doc := range dokumens {
-		if doc.TipeDokumen == tipe {
-			return &doc
+	for i := range dokumens {
+		if dokumens[i].TipeDokumen == tipe {
+			return &dokumens[i]
 		}
 	}
 	return nil
@@ -916,28 +983,18 @@ func findTandaTanganByJabatan(riwayats []model.RiwayatApproval) map[string]model
 	return hasil
 }
 
-func (s *PerjalananDinasImpl) EditPerjalananDinas(ctx context.Context, ppdID uint, req dto.UpdatePPDRequest) error {
-	var totalHitung int64
+func (s *PerjalananDinasImpl) EditPerjalananDinas(ctx context.Context, ppdID uint, jabatan string, req dto.UpdatePPDRequest) error {
 
-	for _, tambahan := range req.RincianTambahan {
-		totalHitung += int64(tambahan.Harga) * int64(tambahan.Kuantitas)
-	}
-
-	if req.RincianTransportasi != nil {
-		for _, transport := range *req.RincianTransportasi {
-			totalHitung += int64(transport.Harga)
-		}
-	}
-	if req.RincianHotel != nil {
-		totalHitung += int64(req.RincianHotel.Harga)
+	if jabatan != constant.JabatanHRGA {
+		return ErrJabatanTidakValid
 	}
 
 	updateData := model.RequestPPD{
 		Id:                  ppdID,
-		TotalEstimasi:       totalHitung,
-		RincianTambahan:     req.RincianTambahan,
-		RincianTransportasi: req.RincianTransportasi,
-		RincianHotel:        req.RincianHotel,
+		TotalEstimasi:       calculateTotalPPD(req.RincianTambahan, req.RincianTransportasi, req.RincianHotel),
+		RincianTambahan:     mappingRincianTambahan(req.RincianTambahan),
+		RincianTransportasi: mappingRincianTransportasi(req.RincianTransportasi),
+		RincianHotel:        mappingRincianHotel(req.RincianHotel),
 	}
 
 	err := s.repo.UpdatePengajuanPerjalananDinas(ctx, updateData)
@@ -946,4 +1003,120 @@ func (s *PerjalananDinasImpl) EditPerjalananDinas(ctx context.Context, ppdID uin
 	}
 
 	return nil
+}
+
+func calculateTotalPPD(
+	rincianTambahan []dto.PPDRincianTambahan,
+	rincianTransportasi []dto.PPDRincianTransportasi,
+	rincianHotel *dto.PPDRincianHotel,
+) int64 {
+	var total int64
+
+	for _, item := range rincianTambahan {
+		total += item.Harga * int64(item.Kuantitas)
+	}
+
+	if rincianTransportasi != nil {
+		for _, item := range rincianTransportasi {
+			total += item.Harga
+		}
+	}
+
+	if rincianHotel != nil && rincianHotel.NamaHotel != "" {
+		JumlahMalam := calculateJumlahMalam(rincianHotel.CheckIn, rincianHotel.CheckOut)
+		total += rincianHotel.HargaPerMalam * JumlahMalam
+	}
+
+	return total
+}
+
+func mappingRincianTambahan(rincian []dto.PPDRincianTambahan) []model.PPDRincianTambahan {
+	if rincian == nil {
+		return nil
+	}
+	result := &[]model.PPDRincianTambahan{}
+	for _, item := range rincian {
+		*result = append(*result, model.PPDRincianTambahan{
+			Id:         item.ID,
+			Kategori:   item.Kategori,
+			Keterangan: item.Keterangan,
+			Harga:      item.Harga,
+			Kuantitas:  item.Kuantitas,
+		})
+	}
+	return *result
+}
+
+func mappingRincianTransportasi(rincian []dto.PPDRincianTransportasi) []model.PPDTransportasi {
+	if rincian == nil {
+		return nil
+	}
+	result := &[]model.PPDTransportasi{}
+	for _, item := range rincian {
+		*result = append(*result, model.PPDTransportasi{
+			Id:                item.ID,
+			TipePerjalanan:    item.TipePerjalanan,
+			KotaAsal:          item.KotaAsal,
+			KotaTujuan:        item.KotaTujuan,
+			JenisTransportasi: item.JenisTransportasi,
+			NomorKendaraan:    item.NomorKendaraan,
+			Harga:             item.Harga,
+			JamBerangkat:      item.JamBerangkat,
+		})
+	}
+	return *result
+}
+
+func mappingRincianHotel(rincian *dto.PPDRincianHotel) *model.PPDHotel {
+	if rincian == nil {
+		return nil
+	}
+	return &model.PPDHotel{
+		Id:        rincian.ID,
+		NamaHotel: rincian.NamaHotel,
+		CheckIn:   rincian.CheckIn,
+		CheckOut:  rincian.CheckOut,
+		HargaPerMalam: rincian.HargaPerMalam,
+		HargaTotal:    rincian.HargaTotal,
+	}
+}
+
+func calculateJumlahMalam (checkIn, checkOut time.Time) int64 {
+	if checkIn .IsZero() || checkOut.IsZero() {
+		return 0
+	}
+
+	start := normalizeDate(checkIn)
+	end := normalizeDate(checkOut)
+
+	jumlahMalam := int64(end.Sub(start).Hours() / 24)
+	if jumlahMalam < 0 {
+		return 0
+	}
+
+	return jumlahMalam
+
+}
+
+
+func normalizeDate(t time.Time) time.Time {
+    year, month, day := t.Date()
+    return time.Date(year, month, day, 0, 0, 0, 0, t.Location())
+}
+
+type pdfBiayaItem struct {
+	Keterangan string
+	Harga    int64
+	Total    int64
+	TotalRow int64
+}
+
+func parseNominalToInt64(value string) int64 {
+    value = strings.ReplaceAll(value, "Rp", "")
+    value = strings.ReplaceAll(value, ".", "")
+    value = strings.ReplaceAll(value, ",", "")
+    value = strings.ReplaceAll(value, " ", "")
+
+    n, _ := strconv.ParseInt(value, 10, 64)
+    return n
 }

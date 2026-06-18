@@ -34,14 +34,18 @@ func (h *UserHandler) UpdateSignature(c *echo.Context) error {
 
 	path, err := h.service.UpdateSignaturePath(ctx, claims.UserID, file) 
     if err != nil {
-        return c.JSON(http.StatusInternalServerError, map[string]string{
-            "error": err.Error(),
+        return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+            Code:    http.StatusInternalServerError,
+            Status:  "Internal Server Error",
+            Message: err.Error(),
         })
     }
 
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"message":       "Tanda tangan berhasil diunggah",
-		"signature_url": path,
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code:    http.StatusOK,
+		Status:  "Success",
+		Message: "Tanda tangan berhasil diunggah",
+		Data:    map[string]interface{}{"signature_url": path},
 	})
 
 }
@@ -81,4 +85,45 @@ func(h *UserHandler) GetDataProfile (c *echo.Context) error{
 		Data:    data,
 	})
 	
+}
+
+func (h *UserHandler) CreateNewUser(c *echo.Context) error {
+	ctx := c.Request().Context()
+	var req dto.CreateUserRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Data tidak valid",
+		})
+	}
+	claims, ok := middleware.GetClaimsFromContext(ctx)
+	if !ok{
+		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
+			Code: http.StatusUnauthorized,
+			Status: "Unauthorized",
+			Message: "Sesi tidak valid atau tidak memiliki akses",
+		})
+	}
+	req.JabatanRequest = claims.Jabatan
+	err := h.service.CreateNewUser(ctx, req)
+	if err != nil {
+		if errors.Is(err, service.ErrAksesditolak) {
+			return c.JSON(http.StatusForbidden, dto.ErrorResponse{
+				Code:    http.StatusForbidden,
+				Status:  "Forbidden",
+				Message: "Anda tidak memiliki akses untuk membuat user baru",
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
+			Code:    http.StatusInternalServerError,
+			Status:  "Internal Server Error",
+			Message: "Gagal membuat user baru",
+		})
+	}
+	return c.JSON(http.StatusOK, dto.SuccessResponse{
+		Code: http.StatusOK,
+		Status: "Success",
+		Message: "User baru berhasil dibuat",
+	})
 }

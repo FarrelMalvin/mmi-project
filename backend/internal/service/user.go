@@ -7,19 +7,29 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"golang-mmi/internal/constant"
 	"golang-mmi/internal/dto"
 	"golang-mmi/internal/model"
 	"golang-mmi/internal/repository"
+	"golang-mmi/internal/utils"
 
 	"github.com/disintegration/imaging"
+)
+
+var (
+	ErrTandaTanganBelumTersedia = errors.New("tanda tangan belum tersimpan")
+	ErrPasswordTidakBolehKosong = errors.New("password tidak boleh kosong")
 )
 
 type UserService interface {
 	GetUserByID(ctx context.Context, userID uint) (*model.User, error)
 	UpdateSignaturePath(ctx context.Context, userID uint, file *multipart.FileHeader) (string, error)
 	GetDataProfile(ctx context.Context, userID uint)(dto.ProfileResponse, error)
+	EnsureSignaturePath(ctx context.Context, userID uint) error
+	CreateNewUser(ctx context.Context, req dto.CreateUserRequest) error
 }
 
 type UserServiceImpl struct {
@@ -101,7 +111,42 @@ func (s *UserServiceImpl) GetDataProfile(ctx context.Context, userID uint)(dto.P
 		PathTandaTangan: data.PathTandaTangan,
 	}
 
-	fmt.Printf("---DEBUG---\n", response)
-
 	return response, nil
 }
+
+func (s *UserServiceImpl) CreateNewUser(ctx context.Context, req dto.CreateUserRequest) error {
+	if req.JabatanRequest != constant.JabatanHRGA{
+		return ErrAksesditolak
+	}
+	
+	if strings.TrimSpace(req.Password) == "" {
+		return ErrPasswordTidakBolehKosong
+	}
+
+	hashedPassword, err := utils.HashPassword(req.Password)
+	if err != nil {
+		return fmt.Errorf("gagal menghash password: %w", err)
+	}
+
+	user := &model.User{
+		Nama:       req.Nama,
+		Jabatan:    req.Jabatan,
+		Wilayah:    req.Wilayah,
+		Departemen: req.Departemen,
+		Password:   hashedPassword,
+	}
+	return s.repo.CreateNewUser(ctx, user)
+}
+
+func (s *UserServiceImpl) EnsureSignaturePath(ctx context.Context, userID uint) error{
+	path, err := s.repo.GetSignaturePath(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("gagal mendapatkan path tanda tangan: %w", err)
+	}
+	
+ 	if strings.TrimSpace(path) == "" {
+        return ErrTandaTanganBelumTersedia
+    }
+	return nil
+}
+

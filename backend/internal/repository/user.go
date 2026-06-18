@@ -19,6 +19,8 @@ type UserRepository interface {
 	UpdateSignaturePath(ctx context.Context, userID uint, path string) error
 	ChangePassword(ctx context.Context, userID uint, newPassword string) error
 	GetUserDataDetail(ctx context.Context, userID uint)(*model.User, error)
+	GetSignaturePath(ctx context.Context, userID uint) (string, error)
+	CreateNewUser(ctx context.Context, user *model.User) error
 }
 
 func NewUserRepository(db *gorm.DB) UserRepository {
@@ -73,5 +75,26 @@ func (r *userRepository) GetUserDataDetail(ctx context.Context, userID uint)(*mo
 		}
 	}	
 	return &user, nil
+}
+
+func (r *userRepository) GetSignaturePath(ctx context.Context, userID uint) (string, error) {
+	var user model.User
+	err := r.db.WithContext(ctx).
+	Select("id, path_tanda_tangan").
+	Where("id = ?", userID).
+	First(&user).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", errors.New("user not found")
+		}
+		return "", err
+	}
+	return user.PathTandaTangan, nil
+}
+
+func (r *userRepository) CreateNewUser(ctx context.Context, user *model.User) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return tx.Create(user).Error
+	})
 }
 

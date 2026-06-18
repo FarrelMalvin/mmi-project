@@ -1,0 +1,49 @@
+services:
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: http://localhost:8081
+    container_name: moss_frontend_staging
+    ports:
+      - "3000:80"
+    depends_on:
+      - app
+    restart: unless-stopped
+    mem_limit: 256m
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ppd_app_staging
+    env_file:
+      - .env.staging
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./public:/app/public
+    depends_on:
+      - db
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.6
+
+  db:
+    image: postgres:18
+    container_name: moss_db_staging
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: moss_staging
+    ports:
+      - "5433:5432"
+    volumes:
+      - moss_staging_pgdata:/var/lib/postgresql
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.4
+
+volumes:
+  moss_staging_pgdata:

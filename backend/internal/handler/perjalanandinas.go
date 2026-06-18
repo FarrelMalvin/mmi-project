@@ -86,6 +86,13 @@ func (h *PerjalananDinasHandler) ApprovePerjalananDinas(c *echo.Context) error {
 				Message: "Jabatan tidak memiliki izin untuk aksi ini",
 			})
 		}
+		if errors.Is(err, service.ErrTandaTanganBelumTersedia) {
+			return c.JSON(http.StatusPreconditionFailed, dto.ErrorResponse{
+				Code:    http.StatusPreconditionFailed,
+				Status:  "Precondition Failed",
+				Message: "Tanda tangan belum tersedia, pastikan Anda telah mengunggah tanda tangan di profil Anda",
+			})
+		}
 		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Code:    http.StatusInternalServerError,
 			Status:  "Internal Server Error",
@@ -238,6 +245,14 @@ func (h *PerjalananDinasHandler) GetRiwayatPerjalananDinas(c *echo.Context) erro
 func (h *PerjalananDinasHandler) GetListPendingPerjalananDinas(c *echo.Context) error {
 	var req dto.ListPPDRequest
 
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, dto.ErrorResponse{
+			Code:    http.StatusBadRequest,
+			Status:  "Bad Request",
+			Message: "Format query parameter tidak valid",
+		})
+	}
+	
 	ctx := c.Request().Context()
 	claims, ok := middleware.GetClaimsFromContext(ctx)
 	if !ok {
@@ -293,7 +308,7 @@ func (h *PerjalananDinasHandler) GetListPendingPerjalananDinas(c *echo.Context) 
 	})
 }
 
-func (h *PerjalananDinasHandler) CreatePengajuanPerjalanaDinas(c *echo.Context) error {
+func (h *PerjalananDinasHandler) CreatePengajuanPerjalananDinas(c *echo.Context) error {
     var req dto.CreatePPDRequest
 
     if err := c.Bind(&req); err != nil {
@@ -330,7 +345,7 @@ func (h *PerjalananDinasHandler) CreatePengajuanPerjalanaDinas(c *echo.Context) 
     req.UserID = claims.UserID
     req.Jabatan = claims.Jabatan
 
-    err := h.service.CreatePengajuanPerjalanaDinas(ctx, req)
+    err := h.service.CreatePengajuanPerjalananDinas(ctx, req)
     if err != nil {
         if errors.Is(err, service.ErrJabatanTidakValid) {
             return c.JSON(http.StatusForbidden, dto.ErrorResponse{
@@ -346,6 +361,13 @@ func (h *PerjalananDinasHandler) CreatePengajuanPerjalanaDinas(c *echo.Context) 
                 Message: "Kategori rincian tidak valid",
             })
         }
+		if errors.Is(err, service.ErrTandaTanganBelumTersedia) {
+			return c.JSON(http.StatusPreconditionFailed, dto.ErrorResponse{
+				Code:    http.StatusPreconditionFailed,
+				Status:  "Precondition Failed",
+				Message: "Tanda tangan belum tersedia, pastikan Anda telah mengunggah tanda tangan di profil Anda",
+			})
+		}
         return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
             Code:    http.StatusInternalServerError,
             Status:  "Internal Server Error",
@@ -563,7 +585,7 @@ func (h *PerjalananDinasHandler) EditPerjalananDinas(c *echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-	_, ok := middleware.GetClaimsFromContext(ctx)
+	claims, ok := middleware.GetClaimsFromContext(ctx)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, dto.ErrorResponse{
 			Code:    http.StatusUnauthorized,
@@ -572,7 +594,7 @@ func (h *PerjalananDinasHandler) EditPerjalananDinas(c *echo.Context) error {
 		})
 	}
 
-	err := h.service.EditPerjalananDinas(ctx, uint(id), req)
+	err := h.service.EditPerjalananDinas(ctx, uint(id), claims.Jabatan, req)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, dto.ErrorResponse{
 			Code:    http.StatusInternalServerError,

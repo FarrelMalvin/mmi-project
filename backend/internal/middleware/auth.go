@@ -106,7 +106,7 @@ func RequireRoles(jwtService *config.JWTService, allowedRoles ...string) echo.Mi
                     Message: "Token tidak valid atau kedaluwarsa",
                 })
             }
-
+			
             hasAccess := false
             for _, role := range allowedRoles {
                 if claims.Jabatan == role {

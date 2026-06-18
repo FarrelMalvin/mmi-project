@@ -12,11 +12,12 @@ import (
 
 	"golang-mmi/internal/config"
 	"golang-mmi/internal/handler"
+	appMiddleware "golang-mmi/internal/middleware"
 	"golang-mmi/internal/repository"
 	"golang-mmi/internal/route"
 	"golang-mmi/internal/service"
 	"golang-mmi/internal/utils"
-	appMiddleware "golang-mmi/internal/middleware"
+	"golang-mmi/internal/constant"
 	_ "net/http/pprof"
 )
 
@@ -51,6 +52,15 @@ func main() {
 	tokenStore := repository.NewTokenRepository(db)
 	jwtService := config.NewJWTService(cfg, tokenStore)
 	notifManager := utils.NewNotificationManager()
+	authMiddleware := appMiddleware.RequireRoles(
+    	jwtService,
+   		constant.JabatanHRGA,
+    	constant.JabatanAtasan,
+    	constant.JabatanDirektur,
+    	constant.JabatanFinance,
+    	constant.JabatanPegawai,
+
+	)
 
 	//REPOSITORY
 	repoUser := repository.NewUserRepository(db)
@@ -59,12 +69,12 @@ func main() {
 	repoDoc := repository.NewDocumentRepository(db)
 
 	//SERVICE
-	serviceDoc := service.NewDocumentService(repoDoc)
-	servicePPD := service.NewPerjalananDinasService(repoPPD, serviceDoc, notifManager)
-	serviceRBS := service.NewRealisasiRBSService(repoRBS, repoPPD, serviceDoc, notifManager)
-	serviceAuth := service.NewAuthService(repoUser)
-	serviceUser := service.NewUserService(repoUser)
 	serviceUpload := &service.UploadImpl{}
+	serviceUser := service.NewUserService(repoUser)
+	serviceDoc := service.NewDocumentService(repoDoc)
+	servicePPD := service.NewPerjalananDinasService(repoPPD, serviceDoc, serviceUser, notifManager)
+	serviceRBS := service.NewRealisasiRBSService(repoRBS, repoPPD, serviceUser, serviceDoc, notifManager, serviceUpload)
+	serviceAuth := service.NewAuthService(repoUser)
 
 	//HANDLER
 	handlerPPD := handler.NewPerjalananDinasHandler(servicePPD)
@@ -75,18 +85,18 @@ func main() {
 	handlerUpload := handler.NewUploadHandler(serviceUpload)
 
 	e := echo.New()
-	
+
 	e.Use(echoMiddleware.CORSWithConfig(echoMiddleware.CORSConfig{
-	AllowOrigins: []string{"http://localhost:5173"},
-	AllowCredentials: true,
-	AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
-	AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete, http.MethodPatch, http.MethodOptions},
+		AllowOrigins:     []string{"http://localhost:5173","http://localhost:3000"},
+		AllowCredentials: true,
+		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
+		AllowMethods:     []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete, http.MethodPatch, http.MethodOptions},
 	}))
 
 	e.Use(echoMiddleware.RequestLogger())
 	e.Use(echoMiddleware.Recover())
 
-	authMiddleware := appMiddleware.RequireRoles(jwtService)
+	
 
 	e.Static("/storage", "storage")
 	e.Static("/public", "public")
@@ -99,13 +109,11 @@ func main() {
 	route.RegisterNotificationRoutes(e, notifHandler)
 	route.RegisterUploadRoutes(e, handlerUpload, jwtService)
 
-	/*log.Println("Memulai proses seeding user...")
-    config.SeedUsers(db)
-    log.Println("Proses seeding selesai.")
-	*/
+	log.Println("Memulai proses seeding user...")
+	config.SeedUsers(db)
+	log.Println("Proses seeding selesai.")
 
 	log.Println("Server berjalan di http://localhost:8081")
 	log.Fatal(e.Start(":8081"))
 
-	
 }

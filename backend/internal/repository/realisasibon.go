@@ -15,11 +15,13 @@ type RealisasiBonRepository interface {
 	GetListRiwayatRealisasiBonById(ctx context.Context, page int, limit int, userID uint) ([]model.RBSListView, int64, int64, error)
 	ApproveRBS(ctx context.Context, p ApproveRBSParam) error
 	DeclineRBS(ctx context.Context, p DeclineRBSParam) error
-	GetListPendingRBS(ctx context.Context, jabatan string, userID uint) ([]model.RBSListView, error)
+	GetListPendingRBS(ctx context.Context, jabatan string, userID uint, page int, limit int) ([]model.RBSListView, int64, error)
 	GetStatusRBS(ctx context.Context, rbsid uint) (string, error)
 	GetDetailRBS(ctx context.Context, rbsid uint) (model.RealisasiBonSementara, error)
 	GetDataRBSforCsv(ctx context.Context, f FilterRBS) ([]model.RBSDataforCsv, error)
 	GetListRiwayatRealisasiBonByAtasan(ctx context.Context, userID uint, page int, limit int, f FilterRBS) ([]model.RBSListView, int64, int64, error)
+	UpdateRBS(ctx context.Context, data model.RealisasiBonSementara) error
+	GetRBSReference(ctx context.Context, rbsid uint) (model.RealisasiBonSementara, error)
 }
 
 func NewRealisasiBonRepository(db *gorm.DB) RealisasiBonRepository {
@@ -40,6 +42,7 @@ type FilterRBS struct {
 type ApproveRBSParam struct {
 	RealisasiBonID uint
 	NextStatus     string
+	CurrentStatus  string
 	NewDokumen     []model.Dokumen
 	Riwayat        *model.RiwayatApproval
 }
@@ -47,6 +50,7 @@ type ApproveRBSParam struct {
 type DeclineRBSParam struct {
 	RealisasiBonID uint
 	NextStatus     string
+	CurrentStatus  string
 	Riwayat        *model.RiwayatApproval
 }
 
@@ -211,7 +215,7 @@ func (r *RealisasiBon) ApproveRBS(ctx context.Context, p ApproveRBSParam) error 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		if err := tx.Model(&model.RealisasiBonSementara{}).
-			Where("id = ?", p.RealisasiBonID).
+			Where("id = ? AND status = ?", p.RealisasiBonID, p.CurrentStatus).
 			Update("status", p.NextStatus).Error; err != nil {
 			return err
 		}
@@ -230,8 +234,17 @@ func (r *RealisasiBon) ApproveRBS(ctx context.Context, p ApproveRBSParam) error 
 	})
 }
 
-func (r *RealisasiBon) GetListPendingRBS(ctx context.Context, jabatan string, userID uint) ([]model.RBSListView, error) {
+func (r *RealisasiBon) GetListPendingRBS(ctx context.Context, jabatan string, userID uint, page int, limit int) ([]model.RBSListView, int64, error) {
 	var listData []model.RBSListView
+	var totalData int64
+	
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	offset := (page - 1) * limit
 
 	query := r.db.WithContext(ctx).
 		Table("realisasi_bon_sementaras").
@@ -255,15 +268,29 @@ func (r *RealisasiBon) GetListPendingRBS(ctx context.Context, jabatan string, us
 		query = query.Where("realisasi_bon_sementaras.status = ? AND users.atasan_id = ?", constant.StatusMenungguAtasan, userID)
 	case constant.JabatanHRGA:
 		query = query.Where("realisasi_bon_sementaras.status = ?", constant.StatusMenungguHRGA)
+	case constant.JabatanDirektur:
+		query = query.Where("realisasi_bon_sementaras.status = ?", constant.StatusMenungguDirektur)
 	case constant.JabatanFinance:
 		query = query.Where("realisasi_bon_sementaras.status = ?", constant.StatusMenungguFinance)
 	default:
-		return []model.RBSListView{}, nil
+		return []model.RBSListView{}, 0, nil
 	}
 
 	err := query.Order("realisasi_bon_sementaras.periode_berangkat desc").Find(&listData).Error
 
-	return listData, err
+	
+	err = query.Count(&totalData).Error
+	if err != nil {
+		return nil, 0, err
+	}
+
+	err = query.
+		Order("request_ppds.periode_berangkat DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&listData).Error
+
+	return listData, totalData, err
 }
 
 func (r *RealisasiBon) GetStatusRBS(ctx context.Context, rbsid uint) (string, error) {
@@ -272,7 +299,7 @@ func (r *RealisasiBon) GetStatusRBS(ctx context.Context, rbsid uint) (string, er
 		Model(&model.RealisasiBonSementara{}).
 		Select("status").
 		Where("id = ?", rbsid).
-		Scan(&status).Error
+		First(&status).Error
 
 	return status, err
 }
@@ -281,7 +308,7 @@ func (r *RealisasiBon) DeclineRBS(ctx context.Context, p DeclineRBSParam) error 
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 
 		if err := tx.Model(&model.RealisasiBonSementara{}).
-			Where("id = ?", p.RealisasiBonID).
+			Where("id = ? AND status = ?", p.RealisasiBonID, p.CurrentStatus).
 			Update("status", p.NextStatus).Error; err != nil {
 			return err
 		}
@@ -300,11 +327,13 @@ func (r *RealisasiBon) GetDetailRBS(ctx context.Context, rbsid uint) (model.Real
 	var detailData model.RealisasiBonSementara
 
 	err := r.db.WithContext(ctx).
-		Preload("RBSrincian").
+		Preload("User").
+		Preload("RBSrincian", func(db *gorm.DB) *gorm.DB {
+			return db.Order("tanggal_transaksi ASC")
+		}).
 		Preload("Dokumen").
 		Preload("RiwayatPersetujuan.User").
 		First(&detailData, rbsid).Error
-
 	return detailData, err
 }
 
@@ -316,16 +345,16 @@ func (r *RealisasiBon) GetDataRBSforCsv(ctx context.Context, f FilterRBS) ([]mod
 		Select(`
             realisasi_bon_sementaras.total_realisasi,
             realisasi_bon_sementaras.periode_berangkat AS periode,
-            rb_srincians.uraian,
-            rb_srincians.kategori,
-            rb_srincians.kuantitas,
-            rb_srincians.tanggal_transaksi,
-            rb_srincians.harga_unit,
-            rb_srincians.total_harga,
+            rbs_rincians.uraian,
+            rbs_rincians.kategori,
+            rbs_rincians.kuantitas,
+            rbs_rincians.tanggal_transaksi,
+            rbs_rincians.harga_unit,
+            rbs_rincians.total_harga,
             users.nama,
             realisasi_bon_sementaras.nomor_bon_sementara AS nomor_referensi_bs
         `).
-		Joins("LEFT JOIN rb_srincians ON rb_srincians.rbs_id = realisasi_bon_sementaras.id").
+		Joins("LEFT JOIN rbs_rincians ON rbs_rincians.rbs_id = realisasi_bon_sementaras.id").
 		Joins("LEFT JOIN users ON users.id = realisasi_bon_sementaras.user_id").
 		Where("realisasi_bon_sementaras.status = ?", constant.StatusSelesai)
 
@@ -343,11 +372,51 @@ func (r *RealisasiBon) GetDataRBSforCsv(ctx context.Context, f FilterRBS) ([]mod
 	}
 
 	err := query.
-		Order("rb_srincians.kategori, rb_srincians.tanggal_transaksi").
+		Order("rbs_rincians.kategori, rbs_rincians.tanggal_transaksi").
 		Scan(&data).Error
 	if err != nil {
 		return nil, fmt.Errorf("gagal mengambil data RBS untuk excel: %w", err)
 	}
 
 	return data, nil
+}
+
+func (r *RealisasiBon) UpdateRBS(ctx context.Context, data model.RealisasiBonSementara) error {
+
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&model.RealisasiBonSementara{}).
+			Where("id = ?", data.Id).
+			Updates(map[string]interface{}{
+				"total_realisasi": data.TotalRealisasi,
+				"selisih":         data.Selisih,
+			}).Error; err != nil {
+			return err
+		}
+
+		for _, item := range data.RBSrincian {
+			if err := tx.Model(&model.RBSrincian{}).
+				Where("id = ? AND rbs_id = ?", item.Id, data.Id).
+				Updates(map[string]interface{}{
+					"kuantitas":   item.Kuantitas,
+					"harga_unit":  item.HargaUnit,
+					"total_harga": item.TotalHarga,
+				}).Error; err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+}
+
+func (r *RealisasiBon) GetRBSReference (ctx context.Context, rbsid uint)(model.RealisasiBonSementara, error) {
+	var data model.RealisasiBonSementara
+
+	err := r.db.WithContext(ctx).
+		Select("id, request_ppd_id, status").
+		Where("id = ?", rbsid).
+		First(&data).Error
+
+	return data, err
 }

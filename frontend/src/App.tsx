@@ -6,7 +6,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import DashboardLayout from "./pages/dashboard/DashboardLayout";
 const LoginPage = React.lazy(() => import("./pages/login/LoginPage"));
 const DashboardPage = React.lazy(() => import("./pages/dashboard/DashboardPage"));
-const PerjalananDinasPage = React.lazy(() => import("./pages/perjalanandinas"));
+const PerjalananDinasPage = React.lazy(() => import("./pages/perjalanandinas/BonPage"));
 const ProfilePage = React.lazy(() => import("./pages/profile/Index"));
 
 function ProtectedRoute({ children }: { children: React.ReactElement }) {
