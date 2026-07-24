@@ -10,21 +10,18 @@ import (
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Izinkan semua CORS
+		return true 
 	},
 }
 
-// Struct Handler untuk menyimpan instance Manager
 type NotificationHandler struct {
 	Manager *utils.NotificationManager
 }
 
-// Constructor Handler
 func NewNotificationHandler(m *utils.NotificationManager) *NotificationHandler {
 	return &NotificationHandler{Manager: m}
 }
 
-// Method untuk menangani koneksi WebSocket
 func (h *NotificationHandler) HandleWS(c *echo.Context) error {
 	ws, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
@@ -36,9 +33,7 @@ func (h *NotificationHandler) HandleWS(c *echo.Context) error {
 	if userRole == "" {
 		userRole = "Guest"
 	}
-	userID := uint(1) // Dummy ID, sesuaikan dengan JWT nanti
-
-	// Gunakan Manager dari struct
+	userID := uint(1) 
 	h.Manager.AddClient(ws, userRole, userID)
 	defer h.Manager.RemoveClient(ws)
 

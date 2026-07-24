@@ -40,7 +40,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Ubah menjadi async untuk menangani request refresh
   const loadUserFromToken = useCallback(async () => {
     const token = localStorage.getItem("token");
     if (token) {
@@ -53,7 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role: decoded.jabatan ? decoded.jabatan.toLowerCase() : "pegawai" 
         });
       } else {
-        // Blok eksekusi saat token expired (Mencegah logout langsung)
         try {
           const res = await api.post("/auth/refresh", {}, { withCredentials: true });
           const newToken = res.data.data.access_token;
@@ -67,7 +65,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             role: newDecoded?.jabatan ? newDecoded.jabatan.toLowerCase() : "pegawai" 
           });
         } catch (error) {
-          // Jika refresh token juga gagal/expired, baru lakukan pembersihan sesi
           localStorage.removeItem("token");
           setUser(null);
         }
@@ -86,11 +83,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const res = await api.post("/auth/login", { nama, password });
     const token = res.data.data.access_token;
     localStorage.setItem("token", token);
-    await loadUserFromToken(); // Tambahkan await agar state tersinkronisasi
+    await loadUserFromToken(); 
     return res;
   };
 
-  // Fungsi logout tidak diubah sesuai instruksi
   const logout = (): void => {
     localStorage.removeItem("token");
     setUser(null);

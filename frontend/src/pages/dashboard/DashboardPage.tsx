@@ -29,7 +29,6 @@ export default function DashboardPage() {
         <p className="text-slate-400 mt-2 text-sm">Pilih fitur untuk memulai</p>
       </div>
 
-      {/* PERUBAHAN: Mengganti grid menjadi flex dan justify-center agar item ke tengah */}
       <div className="flex flex-wrap justify-center gap-6 md:gap-8 animate-fade-in stagger-1">
         {appItems.map((item) => {
           const Icon = item.icon;

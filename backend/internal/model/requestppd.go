@@ -41,12 +41,13 @@ type PPDListView struct {
 }
 
 type PPDItemView struct {
-	ID        uint   `gorm:"column:id"`
-	Uraian    string `gorm:"column:uraian"`
-	Kuantitas int    `gorm:"column:kuantitas"`
-	Kategori  string `gorm:"column:kategori"`
-	HargaUnit int64  `gorm:"column:harga_unit"`
-	Total     int64  `gorm:"column:total"`
+	ID            uint   `gorm:"column:id"`	
+	Uraian        string `gorm:"column:uraian"`
+	Kuantitas     int    `gorm:"column:kuantitas"`
+	Kategori      string `gorm:"column:kategori"`
+	HargaUnit     int64  `gorm:"column:harga_unit"`
+	Total         int64  `gorm:"column:total"`
+	TotalEstimasi int64  `gorm:"column:total_estimasi"`
 }
 
 type DropdownPPDView struct {
@@ -55,4 +56,5 @@ type DropdownPPDView struct {
 	Tujuan           string    `gorm:"column:tujuan"`
 	PeriodeBerangkat time.Time `gorm:"column:periode_berangkat"`
 	PeriodeKembali   time.Time `gorm:"column:periode_kembali"`
+	TotalEstimasi    int64     `gorm:"column:total_estimasi"`
 }

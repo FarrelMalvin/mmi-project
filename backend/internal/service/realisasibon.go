@@ -29,17 +29,17 @@ var (
 )
 
 var ProsesStatusRBS = map[string][]string{
-	constant.StatusDraft:           {constant.StatusMenungguAtasan},
-	constant.StatusMenungguAtasan:  {constant.StatusMenungguFinance, constant.StatusDitolakAtasan},
-	constant.StatusMenungguHRGA:    {constant.StatusMenungguFinance, constant.StatusDitolakHRGA},
+	constant.StatusDraft:            {constant.StatusMenungguHRGA},
+	constant.StatusMenungguAtasan:   {constant.StatusMenungguHRGA, constant.StatusDitolakAtasan},
+	constant.StatusMenungguHRGA:     {constant.StatusMenungguFinance, constant.StatusDitolakHRGA},
 	constant.StatusMenungguDirektur: {constant.StatusMenungguFinance, constant.StatusDitolakDirektur},
-	constant.StatusMenungguFinance: {constant.StatusSelesai, constant.StatusDitolakFinance},
+	constant.StatusMenungguFinance:  {constant.StatusSelesai, constant.StatusDitolakFinance},
 }
 
 var statusRBSYangDiharapkan = map[string]string{
-	constant.JabatanAtasan:  constant.StatusMenungguAtasan,
-	constant.JabatanHRGA:    constant.StatusMenungguHRGA,
-	constant.JabatanFinance: constant.StatusMenungguFinance,
+	constant.JabatanAtasan:   constant.StatusMenungguAtasan,
+	constant.JabatanHRGA:     constant.StatusMenungguHRGA,
+	constant.JabatanFinance:  constant.StatusMenungguFinance,
 	constant.JabatanDirektur: constant.StatusMenungguDirektur,
 }
 
@@ -57,22 +57,22 @@ type ServiceRBS interface {
 }
 
 type RealisasiBonImpl struct {
-	repo         repository.RealisasiBonRepository
-	repoppd      repository.PerjalananDinasRepository
-	userService  UserService
-	servicedoc   DocumentService
+	repo          repository.RealisasiBonRepository
+	repoppd       repository.PerjalananDinasRepository
+	userService   UserService
+	servicedoc    DocumentService
 	UploadService UploadService
-	notifManager *utils.NotificationManager
+	notifManager  *utils.NotificationManager
 }
 
 func NewRealisasiRBSService(repo repository.RealisasiBonRepository, repoppd repository.PerjalananDinasRepository, userService UserService, servicedoc DocumentService, notifManager *utils.NotificationManager, uploadService UploadService) *RealisasiBonImpl {
 	return &RealisasiBonImpl{
-		repo:         repo,
-		repoppd:      repoppd,
-		userService:  userService,
-		servicedoc:   servicedoc,
+		repo:          repo,
+		repoppd:       repoppd,
+		userService:   userService,
+		servicedoc:    servicedoc,
 		UploadService: uploadService,
-		notifManager: notifManager,
+		notifManager:  notifManager,
 	}
 }
 
@@ -85,34 +85,34 @@ func (s *RealisasiBonImpl) CreateRealisasiBon(ctx context.Context, req dto.Creat
 	case constant.JabatanPegawai:
 		if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
 			if errors.Is(err, ErrTandaTanganBelumTersedia) {
-        		return ErrTandaTanganBelumTersedia
+				return ErrTandaTanganBelumTersedia
 			}
 			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
-    	}
-		status = constant.StatusMenungguAtasan
+		}
+		status = constant.StatusMenungguHRGA
 	case constant.JabatanAtasan:
 		if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
 			if errors.Is(err, ErrTandaTanganBelumTersedia) {
-        		return ErrTandaTanganBelumTersedia
+				return ErrTandaTanganBelumTersedia
 			}
 			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
-    	}
-		
+		}
+
 		status = constant.StatusMenungguHRGA
 		autoApprovals = append(autoApprovals, model.RiwayatApproval{
 			UserID:   req.UserID,
 			Jabatan:  constant.JabatanAtasan,
 			Tindakan: constant.TindakanDisetujui,
-			Catatan:  "Auto-approved (diajukan oleh atasan)",	
+			Catatan:  "Auto-approved (diajukan oleh atasan)",
 		})
 
 	case constant.JabatanHRGA:
 		if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
 			if errors.Is(err, ErrTandaTanganBelumTersedia) {
-        		return ErrTandaTanganBelumTersedia
+				return ErrTandaTanganBelumTersedia
 			}
 			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
-    	}
+		}
 
 		status = constant.StatusMenungguDirektur
 		autoApprovals = append(autoApprovals,
@@ -140,13 +140,13 @@ func (s *RealisasiBonImpl) CreateRealisasiBon(ctx context.Context, req dto.Creat
 	var urlBuktiTransfer string
 
 	if req.BuktiTransferField != nil && *req.BuktiTransferField != "" {
-    	file := files[*req.BuktiTransferField]
+		file := files[*req.BuktiTransferField]
 
-    	url, err := s.UploadService.UploadStruk(ctx, file, req.UserID)
-    if err != nil {
-        return err
-    }
-    	urlBuktiTransfer = url
+		url, err := s.UploadService.UploadStruk(ctx, file, req.UserID)
+		if err != nil {
+			return err
+		}
+		urlBuktiTransfer = url
 	}
 
 	for _, item := range req.Items {
@@ -190,13 +190,12 @@ func (s *RealisasiBonImpl) CreateRealisasiBon(ctx context.Context, req dto.Creat
 		Status:             status,
 		RBSrincian:         rincianItems,
 		RiwayatPersetujuan: autoApprovals,
-
 	}
 
 	if err := s.repo.CreateRealisasiBon(ctx, &newRBS); err != nil {
- 		for _, fileURL := range savedfileURL {
-            _ = s.UploadService.DeleteFileByURL(ctx, fileURL)
-        }
+		for _, fileURL := range savedfileURL {
+			_ = s.UploadService.DeleteFileByURL(ctx, fileURL)
+		}
 
 		return fmt.Errorf("gagal membuat realisasi bon sementara: %w", err)
 	}
@@ -261,13 +260,13 @@ func (s *RealisasiBonImpl) ApproveRBS(ctx context.Context, req *dto.ApproveRBSRe
 	if err := validateJabatanDanStatusRBS(req.Jabatan, currentStatus); err != nil {
 		return err
 	}
-	
+
 	if err := s.userService.EnsureSignaturePath(ctx, req.UserID); err != nil {
-			if errors.Is(err, ErrTandaTanganBelumTersedia) {
-        		return ErrTandaTanganBelumTersedia
-			}
-			return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
-    	}
+		if errors.Is(err, ErrTandaTanganBelumTersedia) {
+			return ErrTandaTanganBelumTersedia
+		}
+		return fmt.Errorf("gagal mengecek tanda tangan tersedia: %w", err)
+	}
 
 	OpsiStatus, exist := ProsesStatusRBS[currentStatus]
 	if !exist || len(OpsiStatus) == 0 {
@@ -342,13 +341,14 @@ func (s *RealisasiBonImpl) GetDropdownPPD(ctx context.Context, userID uint) ([]d
 			Tujuan:           item.Tujuan,
 			PeriodeBerangkat: item.PeriodeBerangkat.Format("02/01/2006"),
 			PeriodeKembali:   item.PeriodeKembali.Format("02/01/2006"),
+			TotalEstimasi:    item.TotalEstimasi,
 		})
 	}
 
 	return response, nil
 }
 
-func (s *RealisasiBonImpl) GetListPendingRBS(ctx context.Context, req  dto.RBSListRequest) ([]dto.ListRBSResponse, int64, error) {
+func (s *RealisasiBonImpl) GetListPendingRBS(ctx context.Context, req dto.RBSListRequest) ([]dto.ListRBSResponse, int64, error) {
 	var dataModels []model.RBSListView
 	var totalData int64
 	var err error
@@ -505,7 +505,7 @@ func (s *RealisasiBonImpl) GetDataRBSForPDF(ctx context.Context, rbsID uint, use
 		wilayahDisetujui = r.User.Wilayah
 		namaFinance = r.User.Nama
 	}
-	
+
 	pathDiketahui, namaDiketahui := findTandaTanganDiketahui(data.User.Jabatan, riwayats)
 
 	totalEstimasi, err := s.repoppd.GetTotalEstimasi(ctx, data.RequestPPDID)
@@ -514,21 +514,21 @@ func (s *RealisasiBonImpl) GetDataRBSForPDF(ctx context.Context, rbsID uint, use
 	}
 
 	pdfData := &dto.RBSDataToPDF{
-		NomorDokumen:           nomorDokumen,
-		TanggalTerbit:          tanggalTerbit,
-		NomorBS:                data.NomorBonSementara,
-		TanggalDibuat:          utils.FormatTanggal(data.CreatedAt),
-		WilayahDisetujui:       wilayahDisetujui,
-		Selisih:                utils.FormatRupiah(data.Selisih),
-		TotalRealisasi:         utils.FormatRupiah(data.TotalRealisasi),
-		TotalBon:               utils.FormatRupiah(totalEstimasi),
-		Periode:                utils.FormatTanggal(data.PeriodeBerangkat) + " - " + utils.FormatTanggal(data.PeriodeKembali),
-		PathTandaTanganPengaju: data.User.PathTandaTangan,
-		NamaPengaju:            data.User.Nama,
-		PathTandaTanganFinance: pathFinance,
-		NamaFinance:            namaFinance,
+		NomorDokumen:             nomorDokumen,
+		TanggalTerbit:            tanggalTerbit,
+		NomorBS:                  data.NomorBonSementara,
+		TanggalDibuat:            utils.FormatTanggal(data.CreatedAt),
+		WilayahDisetujui:         wilayahDisetujui,
+		Selisih:                  utils.FormatRupiah(data.Selisih),
+		TotalRealisasi:           utils.FormatRupiah(data.TotalRealisasi),
+		TotalBon:                 utils.FormatRupiah(totalEstimasi),
+		Periode:                  utils.FormatTanggal(data.PeriodeBerangkat) + " - " + utils.FormatTanggal(data.PeriodeKembali),
+		PathTandaTanganPengaju:   data.User.PathTandaTangan,
+		NamaPengaju:              data.User.Nama,
+		PathTandaTanganFinance:   pathFinance,
+		NamaFinance:              namaFinance,
 		PathTandaTanganDiketahui: pathDiketahui,
-		NamaDiketahui:          namaDiketahui,
+		NamaDiketahui:            namaDiketahui,
 	}
 
 	for _, rincian := range data.RBSrincian {
@@ -554,12 +554,12 @@ func (s *RealisasiBonImpl) FillRBSPDF(ctx context.Context, rbsID uint, userID ui
 	logoBase64 := utils.GetBase64Image(logoPath)
 
 	tmplData := map[string]interface{}{
-		"Data":       pdfData,
-		"Logo":       logoBase64,
-		"TtdPengaju": utils.GetBase64Image(pdfData.PathTandaTanganPengaju),
-		"TtdFinance": utils.GetBase64Image(pdfData.PathTandaTanganFinance),
-		"TtdDiketahui":  utils.GetBase64Image(pdfData.PathTandaTanganDiketahui),
-		"LogoBase64": utils.GetBase64Image(logoPath),
+		"Data":         pdfData,
+		"Logo":         logoBase64,
+		"TtdPengaju":   utils.GetBase64Image(pdfData.PathTandaTanganPengaju),
+		"TtdFinance":   utils.GetBase64Image(pdfData.PathTandaTanganFinance),
+		"TtdDiketahui": utils.GetBase64Image(pdfData.PathTandaTanganDiketahui),
+		"LogoBase64":   utils.GetBase64Image(logoPath),
 	}
 
 	tmpl, err := template.ParseFiles(templatePath)
@@ -769,7 +769,7 @@ func (s *RealisasiBonImpl) EditRBS(ctx context.Context, rbsid uint, jabatan stri
 	}
 
 	rbs, err := s.repo.GetRBSReference(ctx, rbsid)
-	if err != nil{
+	if err != nil {
 		return ErrRBSTidakDitemukan
 	}
 	if rbs.Status != constant.StatusMenungguHRGA {
@@ -803,7 +803,7 @@ func (s *RealisasiBonImpl) EditRBS(ctx context.Context, rbsid uint, jabatan stri
 }
 
 func mappingRealisasiRincian(rincian []dto.RincianRealisasi) []model.RBSrincian {
-	
+
 	hasil := &[]model.RBSrincian{}
 	for _, item := range rincian {
 		*hasil = append(*hasil, model.RBSrincian{
@@ -839,24 +839,24 @@ func findTandaTanganByJabatanRBS(riwayats []model.RiwayatApproval) map[string]mo
 
 func canAccessRBS(data model.RealisasiBonSementara, userid uint, jabatan string) bool {
 	switch jabatan {
-		case constant.JabatanPegawai:
-			return data.UserID == userid
-		case constant.JabatanAtasan:
-			isOwner := data.UserID == userid
-			IsBawahan := data.User.AtasanID != nil && *data.User.AtasanID == userid
-			return isOwner || IsBawahan
-		case constant.JabatanHRGA, constant.JabatanFinance, constant.JabatanDirektur:
-			return true
-		default:
-			return false
+	case constant.JabatanPegawai:
+		return data.UserID == userid
+	case constant.JabatanAtasan:
+		isOwner := data.UserID == userid
+		IsBawahan := data.User.AtasanID != nil && *data.User.AtasanID == userid
+		return isOwner || IsBawahan
+	case constant.JabatanHRGA, constant.JabatanFinance, constant.JabatanDirektur:
+		return true
+	default:
+		return false
 	}
 }
 
-func findTandaTanganDiketahui(pengajuJabatan string, riwayats map[string]model.RiwayatApproval)(pathTandaTangan string, nama string) {
+func findTandaTanganDiketahui(pengajuJabatan string, riwayats map[string]model.RiwayatApproval) (pathTandaTangan string, nama string) {
 	var targetjabatan string
 	switch pengajuJabatan {
 	case constant.JabatanPegawai:
-		targetjabatan = constant.JabatanAtasan
+		targetjabatan = constant.JabatanHRGA
 	case constant.JabatanAtasan:
 		targetjabatan = constant.JabatanHRGA
 	case constant.JabatanHRGA:
@@ -864,7 +864,7 @@ func findTandaTanganDiketahui(pengajuJabatan string, riwayats map[string]model.R
 	default:
 		return "", ""
 	}
-	
+
 	r, ok := riwayats[targetjabatan]
 	if !ok {
 		return "", ""

@@ -30,6 +30,7 @@ type DropdownPPDResponse struct {
 	PeriodeKembali   string `json:"periode_kembali"`
 	PeriodeBerangkat string `json:"periode_berangkat"`
 	Tujuan           string `json:"tujuan"`
+	TotalEstimasi    int64  `json:"total_estimasi"`
 }
 
 type DetailPPDResponse struct {

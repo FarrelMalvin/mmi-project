@@ -21,7 +21,6 @@ const processQueue = (error: any, token: string | null = null) => {
   failedQueue = [];
 };
 
-// Request Interceptor: Menempelkan token ke setiap request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem("token");
   if (token && config.headers) {
@@ -30,16 +29,13 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// Response Interceptor: Menangani error 401 dan Refresh Token
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
 
-    // Jika error 401 dan bukan request retry
     if (error.response?.status === 401 && !originalRequest._retry) {
       
-      // Jika proses refresh sedang berjalan, masukkan request ke antrean
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -54,17 +50,14 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       isRefreshing = true;
 
-      console.log("🔄 Mencoba refresh token...");
-
       try {
-        // Menggunakan axios standar (bukan 'api') agar bersih dari header lama
         const res = await axios.post(
           `${BACKEND_URL}/api/v1/auth/refresh`, 
           {}, 
           { 
             withCredentials: true,
             headers: { 
-              'Authorization': '' // Kosongkan seperti di Postman
+              'Authorization': '' 
             } 
           }
         );
@@ -81,7 +74,6 @@ api.interceptors.response.use(
         }
       } catch (refreshError: any) {
         processQueue(refreshError, null);
-        console.error("❌ Refresh token gagal. Sesi berakhir.");
         
         localStorage.removeItem("token");
         window.location.href = "/login";

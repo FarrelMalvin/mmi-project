@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"log"
 
 
 	"github.com/labstack/echo/v5"
@@ -471,6 +472,7 @@ func (h *PerjalananDinasHandler) GetItemsByPPDID(c *echo.Context) error {
         Data:    data,
     })
 }
+
 func (h *PerjalananDinasHandler) GeneratePPDPDF(c *echo.Context) error {
     ctx := c.Request().Context()
     claims, ok := middleware.GetClaimsFromContext(ctx)
@@ -491,6 +493,7 @@ func (h *PerjalananDinasHandler) GeneratePPDPDF(c *echo.Context) error {
             Message: "ID Perjalanan Dinas tidak valid",
         })
     }
+	log.Printf("❌ FillPPDPDF error (ppdID=%d, user=%d): %v", ppdID, claims.UserID, err)
 
     templatePath := constant.PPDTemplatePath
 
@@ -502,6 +505,8 @@ func (h *PerjalananDinasHandler) GeneratePPDPDF(c *echo.Context) error {
     if err != nil {
         c.Response().Header().Del("Content-Type")
         c.Response().Header().Del("Content-Disposition")
+
+		log.Printf(" FillPPDPDF error (ppdID=%d, user=%d): %v | type=%T", ppdID, claims.UserID, err, err)
 
 		if errors.Is(err, service.ErrAksesditolak) {
             return c.JSON(http.StatusForbidden, dto.ErrorResponse{

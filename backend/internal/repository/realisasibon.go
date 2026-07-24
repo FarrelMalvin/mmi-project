@@ -329,7 +329,7 @@ func (r *RealisasiBon) GetDetailRBS(ctx context.Context, rbsid uint) (model.Real
 	err := r.db.WithContext(ctx).
 		Preload("User").
 		Preload("RBSrincian", func(db *gorm.DB) *gorm.DB {
-			return db.Order("tanggal_transaksi ASC")
+			return db.Order("kategori ASC, tanggal_transaksi ASC") 
 		}).
 		Preload("Dokumen").
 		Preload("RiwayatPersetujuan.User").

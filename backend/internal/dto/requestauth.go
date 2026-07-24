@@ -5,3 +5,4 @@ type ChangePasswordRequest struct {
 	NewPassword string `json:"new_password"`
 	UserId      uint   `json:"-"`
 }
+

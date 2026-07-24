@@ -7,21 +7,33 @@ import { Label } from "../../components/common/Label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/common/Select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "../../components/common/Dialog";
 import { toast } from "sonner";
-import { Plus, Trash2, Loader2, UploadCloud } from "lucide-react";
+import { Plus, Trash2, Loader2, UploadCloud, AlertTriangle } from "lucide-react";
 
 const fmt = (n: number) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(n);
+
+async function computeFileHash(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const hashBuffer = await crypto.subtle.digest("SHA-256", buffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void; }) {
   const [loading, setLoading] = useState(false);
   const [loadingItems, setLoadingItems] = useState(false);
-  const [uploadingIdx] = useState<number | null>(null);
+  const [uploadingIdx, setUploadingIdx] = useState<number | null>(null);
+  const [uploadingTransfer, setUploadingTransfer] = useState(false);
   const [options, setOptions] = useState<any[]>([]);
+  
+  const [estimasiAwal, setEstimasiAwal] = useState<number>(0);
   
   const [realForm, setRealForm] = useState<any>({
     request_ppd_id: "", 
     periode_berangkat: "", 
     periode_kembali: "", 
     bukti_transfer: "", 
+    bukti_transfer_file: null as File | null,
+    bukti_transfer_hash: "",
     items: [{ 
       tanggal: "", 
       kategori: "Konsumsi", 
@@ -29,9 +41,9 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
       quantity: 1, 
       harga_per_unit: 0, 
       total: 0, 
-      bukti: "" ,
-      struk_file: null,
-      struk_preview: null
+      bukti: "",
+      struk_file: null as File | null,
+      struk_hash: "",
     }]
   });
 
@@ -41,11 +53,14 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
         .then((res) => setOptions(res.data?.data || res.data || []))
         .catch((err) => toast.error(getApiErrorMessage(err, "Gagal memuat daftar referensi bon")));
     } else {
+      setEstimasiAwal(0);
       setRealForm({ 
         request_ppd_id: "", 
         periode_berangkat: "", 
         periode_kembali: "", 
         bukti_transfer: "", 
+        bukti_transfer_file: null,
+        bukti_transfer_hash: "",
         items: [{ 
           tanggal: "", 
           kategori: "Konsumsi", 
@@ -53,7 +68,9 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
           quantity: 1, 
           harga_per_unit: 0, 
           total: 0, 
-          bukti: "" 
+          bukti: "",
+          struk_file: null,
+          struk_hash: "",
         }] 
       });
     }
@@ -61,6 +78,10 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
 
   const handleBonChange = async (val: string) => {
     setRealForm((p: any) => ({ ...p, request_ppd_id: val }));
+
+    const selectedBon = options.find((o) => o.id.toString() === val);
+    setEstimasiAwal(selectedBon ? parseFloat(selectedBon.total_estimasi) || 0 : 0);
+
     setLoadingItems(true);
     try {
       const res = await api.get(`/ppd/${val}/item`);
@@ -75,13 +96,15 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
           quantity: item.qty || item.kuantitas || item.quantity || 1, 
           harga_per_unit: 0, 
           total: 0, 
-          bukti: "" 
+          bukti: "",
+          struk_file: null,
+          struk_hash: "",
         }));
         setRealForm((p: any) => ({ ...p, items: mappedItems }));
       } else {
         setRealForm((p: any) => ({ 
           ...p, 
-          items: [{ tanggal: "", kategori: "Konsumsi", uraian: "", quantity: 1, harga_per_unit: 0, total: 0, bukti: "" }] 
+          items: [{ tanggal: "", kategori: "Konsumsi", uraian: "", quantity: 1, harga_per_unit: 0, total: 0, bukti: "", struk_file: null, struk_hash: "" }] 
         }));
       }
     } catch (err) { 
@@ -113,7 +136,7 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
     });
   };
 
-  const handleFileUpload = (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (idx: number, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -123,25 +146,49 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
       return;
     }
 
-    setRealForm((p: any) => {
-      const items = [...p.items];
+    setUploadingIdx(idx);
+    try {
+      const hash = await computeFileHash(file);
 
-      items[idx] = {
-        ...items[idx],
-        bukti: file.name,
-        struk_file: file,
-      };
+      const duplicateItemIdx = realForm.items.findIndex(
+        (it: any, i: number) => i !== idx && it.struk_hash && it.struk_hash === hash
+      );
 
-      return {
-        ...p,
-        items,
-      };
-    });
+      const isDuplicateWithTransfer = !!realForm.bukti_transfer_hash && realForm.bukti_transfer_hash === hash;
 
-    toast.success("Struk dipilih.");
+      if (duplicateItemIdx !== -1) {
+        toast.error(`Gambar ini sudah dipakai sebagai struk item #${duplicateItemIdx + 1}. Silakan pilih gambar lain.`);
+        e.target.value = "";
+        return;
+      }
+
+      if (isDuplicateWithTransfer) {
+        toast.error("Gambar ini sudah dipakai sebagai bukti transfer. Silakan pilih gambar lain.");
+        e.target.value = "";
+        return;
+      }
+
+      setRealForm((p: any) => {
+        const items = [...p.items];
+        items[idx] = {
+          ...items[idx],
+          bukti: file.name,
+          struk_file: file,
+          struk_hash: hash,
+        };
+        return { ...p, items };
+      });
+
+      toast.success("Struk dipilih.");
+    } catch (err) {
+      toast.error("Gagal memproses file, silakan coba lagi");
+    } finally {
+      setUploadingIdx(null);
+      e.target.value = "";
+    }
   };
 
-  const handleTransferUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleTransferUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -151,24 +198,50 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
       return;
     }
 
-    setRealForm((p: any) => ({
-      ...p,
-      bukti_transfer: file.name,
-      bukti_transfer_file: file,
-    }));
+    setUploadingTransfer(true);
+    try {
+      const hash = await computeFileHash(file);
 
-    toast.success("Bukti transfer dipilih.");
+      const duplicateItemIdx = realForm.items.findIndex(
+        (it: any) => it.struk_hash && it.struk_hash === hash
+      );
+
+      if (duplicateItemIdx !== -1) {
+        toast.error(`Gambar ini sudah dipakai sebagai struk item #${duplicateItemIdx + 1}. Bukti transfer tidak boleh sama dengan struk.`);
+        e.target.value = "";
+        return;
+      }
+
+      setRealForm((p: any) => ({
+        ...p,
+        bukti_transfer: file.name,
+        bukti_transfer_file: file,
+        bukti_transfer_hash: hash,
+      }));
+
+      toast.success("Bukti transfer dipilih.");
+    } catch (err) {
+      toast.error("Gagal memproses file, silakan coba lagi");
+    } finally {
+      setUploadingTransfer(false);
+      e.target.value = "";
+    }
   };
 
   const addRealItem = () => setRealForm((p: any) => ({ 
     ...p, 
-    items: [...p.items, { tanggal: "", kategori: "Konsumsi", uraian: "", quantity: 1, harga_per_unit: 0, total: 0, bukti: "" }] 
+    items: [...p.items, { tanggal: "", kategori: "Konsumsi", uraian: "", quantity: 1, harga_per_unit: 0, total: 0, bukti: "", struk_file: null, struk_hash: "" }] 
   }));
   
   const removeRealItem = (idx: number) => setRealForm((p: any) => ({ 
     ...p, 
     items: p.items.filter((_: any, i: number) => i !== idx) 
   }));
+
+  const totalRealisasi = realForm.items.reduce((sum: number, i: any) => sum + (parseFloat(i.total) || 0), 0);
+
+  const selisih = estimasiAwal - totalRealisasi;
+  const isSisaDana = selisih > 0;
 
   const submitRealisasi = async () => {
     if (
@@ -178,6 +251,11 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
       realForm.items.length === 0
     ) {
       toast.error("Mohon lengkapi referensi, periode keberangkatan, dan kedatangan");
+      return;
+    }
+
+    if (realForm.items.some((i: any) => !i.tanggal)) {
+      toast.error("Tanggal wajib diisi untuk setiap item rincian aktual");
       return;
     }
 
@@ -213,6 +291,11 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
       return;
     }
 
+    if (isSisaDana && !realForm.bukti_transfer_file) {
+      toast.error(`Terdapat sisa dana ${fmt(selisih)} yang harus dikembalikan. Bukti transfer wajib diupload.`);
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -223,17 +306,6 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
       const nomorBonSementara = selectedBon
         ? selectedBon.nomor_tipe_dokumen || selectedBon.nomor_dokumen
         : "";
-
-      const totalRealisasi = realForm.items.reduce(
-        (sum: number, i: any) => sum + (parseFloat(i.total) || 0),
-        0
-      );
-
-      const estimasiAwal = selectedBon
-        ? parseFloat(selectedBon.total_estimasi) || 0
-        : 0;
-
-      const selisih = estimasiAwal - totalRealisasi;
 
       const payload = {
         request_ppd_id: parseInt(realForm.request_ppd_id),
@@ -287,8 +359,6 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
     }
   };
 
-  const totalRealisasi = realForm.items.reduce((sum: number, i: any) => sum + (parseFloat(i.total) || 0), 0);
-
   return (
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="w-[95vw] max-w-full sm:max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -300,7 +370,7 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
         <div className="space-y-4 py-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-1">
-              <Label>Ref. No. Bon Sementara *</Label>
+              <Label>Ref. No. Bon Sementara <span className="text-red-500">*</span></Label>
               <Select value={realForm.request_ppd_id} onValueChange={handleBonChange}>
                 <SelectTrigger className="w-full"><SelectValue placeholder="Pilih Bon Sementara" /></SelectTrigger>
                 <SelectContent>
@@ -313,11 +383,11 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
               </Select>
             </div>
             <div>
-              <Label>Berangkat *</Label>
+              <Label>Berangkat <span className="text-red-500">*</span></Label>
               <Input type="date" value={realForm.periode_berangkat} onChange={handleRealBerangkatChange} />
             </div>
             <div>
-              <Label>Kembali *</Label>
+              <Label>Kembali <span className="text-red-500">*</span></Label>
               <Input type="date" value={realForm.periode_kembali} min={realForm.periode_berangkat} onChange={e => setRealForm((p: any) => ({ ...p, periode_kembali: e.target.value }))} />
             </div>
           </div>
@@ -348,11 +418,13 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
                       )}
                     </div>
 
-                    <div className="sm:col-span-2">
-                      <Label className="text-xs text-slate-500 mb-1.5 block">Tanggal</Label>
+                    <div className="sm:col-span-2"> 
+                      <Label className="text-xs text-slate-500 mb-1.5 block">
+                        Tanggal <span className="text-red-500">*</span>
+                      </Label>
                       <Input 
                         type="date" 
-                        className="h-9 text-xs" 
+                        className="h-9 text-xs"
                         value={item.tanggal} 
                         min={realForm.periode_berangkat || undefined}
                         max={realForm.periode_kembali || undefined}
@@ -384,12 +456,38 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
                     
                     <div className="grid grid-cols-2 gap-3 sm:col-span-2">
                       <div>
-                        <Label className="text-xs text-slate-500 mb-1.5 block">Qty</Label>
-                        <Input type="number" className="h-9 text-xs" value={item.quantity ?? ""} onChange={e => updateRealItem(idx, "quantity", e.target.value)} />
+                        <Label className="text-xs text-slate-500 mb-1.5 block">
+                          Qty
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="1"
+                          className="h-9 text-xs"
+                          value={item.quantity ?? ""}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val !== "" && (val === "-" || parseFloat(val) < 0)) return;
+                            updateRealItem(idx, "quantity", val);
+                          }}
+                        />
                       </div>
                       <div>
-                        <Label className="text-xs text-slate-500 mb-1.5 block">Harga/Unit</Label>
-                        <Input type="number" className="h-9 text-xs" value={item.harga_per_unit ?? ""} onChange={e => updateRealItem(idx, "harga_per_unit", e.target.value)} />
+                        <Label className="text-xs text-slate-500 mb-1.5 block">
+                          Harga/Unit
+                        </Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="any"
+                          className="h-9 text-xs"
+                          value={item.harga_per_unit ?? ""}
+                          onChange={e => {
+                            const val = e.target.value;
+                            if (val !== "" && (val === "-" || parseFloat(val) < 0)) return;
+                            updateRealItem(idx, "harga_per_unit", val);
+                          }}
+                        />
                       </div>
                     </div>
                     
@@ -400,7 +498,6 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
                     
                     <div className="sm:col-span-1 flex flex-row sm:flex-col items-end justify-between sm:justify-end gap-2 mt-2 sm:mt-0">
                       <div className="flex-1 sm:w-full">
-                        {/* Menambahkan tanda bintang (*) agar terlihat wajib */}
                         <Label className="text-xs text-slate-500 mb-1.5 sm:hidden block">Struk / Bukti *</Label>
                         <label className={`flex items-center justify-center h-9 w-full sm:w-9 border ${!item.bukti ? 'border-red-300 bg-red-50' : 'border-slate-300 hover:bg-slate-50'} rounded-md transition-colors cursor-pointer ${uploadingIdx === idx ? 'opacity-50' : ''} ${item.bukti ? 'bg-emerald-50 border-emerald-200' : ''}`}>
                           {uploadingIdx === idx ? <Loader2 className="h-4 w-4 animate-spin text-slate-400" /> : <UploadCloud className={`h-4 w-4 ${item.bukti ? 'text-emerald-600' : (!item.bukti ? 'text-red-400' : 'text-slate-500')}`} />}
@@ -423,14 +520,50 @@ export default function CreateRealisasiDialog({ open, onClose, onSuccess }: { op
               <span className="text-sm text-slate-600 font-medium">Total Realisasi Aktual:</span>
               <span className="text-base font-bold text-slate-900">{fmt(totalRealisasi)}</span>
             </div>
+
+            {!!realForm.request_ppd_id && (
+              <div className={`p-3 rounded-lg flex justify-between items-center ${isSisaDana ? "bg-amber-50 border border-amber-200" : "bg-emerald-50 border border-emerald-200"}`}>
+                <span className={`text-sm font-medium ${isSisaDana ? "text-amber-700" : "text-emerald-700"}`}>
+                  {isSisaDana ? "Sisa Dana (wajib dikembalikan):" : selisih < 0 ? "Kekurangan Dana:" : "Selisih:"}
+                </span>
+                <span className={`text-sm font-bold ${isSisaDana ? "text-amber-700" : selisih < 0 ? "text-red-600" : "text-emerald-700"}`}>
+                  {fmt(Math.abs(selisih))}
+                </span>
+              </div>
+            )}
           </div>
           
           <div>
-            <Label>Upload Bukti Transfer Sisa Dana (Opsional)</Label>
-            <label className="mt-1 border-2 border-dashed border-slate-300 rounded-lg p-4 text-center hover:bg-slate-50 transition cursor-pointer flex flex-col items-center gap-1">
-              <UploadCloud className={`h-5 w-5 ${realForm.bukti_transfer ? 'text-emerald-500' : 'text-slate-400'}`} />
-              <p className="text-xs text-slate-500">{realForm.bukti_transfer ? "✓ Bukti berhasil dipilih" : "Klik untuk upload bukti transfer (Maks 2MB)"}</p>
-              <input type="file" accept="image/*,.pdf" className="hidden" onChange={handleTransferUpload} />
+            <Label className="flex items-center gap-1.5">
+              Upload Bukti Transfer Sisa Dana
+              {isSisaDana ? (
+                <span className="text-red-500">*</span>
+              ) : (
+                <span className="text-slate-400 font-normal">(Opsional)</span>
+              )}
+            </Label>
+
+            {isSisaDana && !realForm.bukti_transfer_file && (
+              <div className="flex items-start gap-1.5 mt-1 mb-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <span>Terdapat sisa dana {fmt(selisih)} yang wajib dikembalikan. Upload bukti transfer sebelum menyimpan.</span>
+              </div>
+            )}
+
+            <label className={`mt-1 border-2 border-dashed rounded-lg p-4 text-center transition cursor-pointer flex flex-col items-center gap-1 ${
+              isSisaDana && !realForm.bukti_transfer_file 
+                ? "border-red-300 bg-red-50 hover:bg-red-100" 
+                : "border-slate-300 hover:bg-slate-50"
+            } ${uploadingTransfer ? "opacity-50 pointer-events-none" : ""}`}>
+              {uploadingTransfer ? (
+                <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+              ) : (
+                <UploadCloud className={`h-5 w-5 ${realForm.bukti_transfer_file ? 'text-emerald-500' : (isSisaDana ? 'text-red-400' : 'text-slate-400')}`} />
+              )}
+              <p className="text-xs text-slate-500">
+                {realForm.bukti_transfer_file ? "✓ Bukti berhasil dipilih" : "Klik untuk upload bukti transfer (Maks 2MB)"}
+              </p>
+              <input type="file" accept="image/*,.pdf" className="hidden" disabled={uploadingTransfer} onChange={handleTransferUpload} />
             </label>
           </div>
         </div>
